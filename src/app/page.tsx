@@ -31,9 +31,9 @@ export default function LandingPage() {
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link href="/auth/signin">
-              <Button size="lg" className="w-full sm:w-auto gap-2" asChild>
-                <ArrowRight className="h-5 w-5" />
+              <Button size="lg" className="w-full sm:w-auto gap-2">
                 Start DSA Foundations
+                <ArrowRight className="h-5 w-5" />
               </Button>
             </Link>
             <Link href="#demo">
@@ -117,9 +117,9 @@ export default function LandingPage() {
             Join 500+ engineering students who get a daily study plan that actually works.
           </p>
           <Link href="/auth/signin">
-            <Button size="lg" className="gap-2" asChild>
-              <ArrowRight className="h-5 w-5" />
+            <Button size="lg" className="gap-2">
               Start Free — No Card Required
+              <ArrowRight className="h-5 w-5" />
             </Button>
           </Link>
         </div>

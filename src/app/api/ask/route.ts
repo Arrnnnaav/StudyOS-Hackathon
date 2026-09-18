@@ -52,10 +52,10 @@ export async function POST(request: Request) {
     
     // Call Bedrock
     const response = await bedrock.send(new InvokeModelCommand({
-      ModelId: MODEL_ID,
-      ContentType: 'application/json',
-      Accept: 'application/json',
-      Body: JSON.stringify({
+      modelId: MODEL_ID,
+      contentType: 'application/json',
+      accept: 'application/json',
+      body: JSON.stringify({
         anthropic_version: 'bedrock-2023-05-31',
         max_tokens: 1000,
         temperature: 0.3,
@@ -75,6 +75,10 @@ export async function POST(request: Request) {
     const insufficientContext = answer.toLowerCase().includes('insufficient') || 
                                  answer.toLowerCase().includes('cannot answer') ||
                                  answer.toLowerCase().includes('not enough information')
+
+    if (!userId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
 
     // Persist ask
     const now = new Date().toISOString()

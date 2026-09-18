@@ -2,11 +2,12 @@ import NextAuth from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { DynamoDBAdapter } from '@auth/dynamodb-adapter'
+import type { DynamoDBDocument } from '@aws-sdk/lib-dynamodb'
 import { db } from './db'
 import { TABLES } from './db'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: DynamoDBAdapter(db, {
+  adapter: DynamoDBAdapter(db as unknown as DynamoDBDocument, {
     tableName: TABLES.USERS,
     partitionKey: 'PK',
     sortKey: 'SK'
@@ -31,21 +32,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, user, account }) {
+      const t = token as any
       if (user) {
-        token.id = user.id
-        token.year = (user as any).year
-        token.activeTrack = (user as any).activeTrack
+        t.id = user.id
+        t.year = (user as any).year
+        t.activeTrack = (user as any).activeTrack
       }
       if (account) {
-        token.accessToken = account.access_token
+        t.accessToken = account.access_token
       }
       return token
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = token.id
-        (session.user as any).year = token.year
-        (session.user as any).activeTrack = token.activeTrack
+        const t = token as any
+        ;(session.user as any).id = t.id
+        ;(session.user as any).year = t.year
+        ;(session.user as any).activeTrack = t.activeTrack
       }
       return session
     }

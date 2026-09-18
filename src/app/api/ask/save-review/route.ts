@@ -1,30 +1,46 @@
-import { auth } from '@/lib/auth'
-import { markAskSavedToReview, createReview, trackEvent } from '@/lib/db'
+import { markAskSavedToReview, createReview, getAskById, trackEvent } from '@/lib/db'
+import { resolveApiUser } from '@/lib/auth-utils'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
   try {
-    const session = await auth()
-    
-    if (!session?.user?.id) {
+    const body = await request.json()
+    const user = await resolveApiUser(body)
+
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { askId, topicId, question, answer } = await request.json()
-    
-    if (!askId || !topicId || !question || !answer) {
+    let { askId, topicId, question, answer } = body
+
+    if (!askId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    await markAskSavedToReview(askId, session.user.id)
+    // If topic/question/answer weren't provided (extension sends only askId),
+    // fall back to the stored ask record.
+    if (!topicId || !question || !answer) {
+      const ask = await getAskById(user.userId, askId)
+      if (ask) {
+        topicId = topicId || ask.topicId || null
+        question = question || ask.question
+        answer = answer || ask.answer
+      }
+    }
+
+    if (!topicId || !question || !answer) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    await markAskSavedToReview(askId, user.userId)
 
     // Create review item (due immediately for demo)
     const reviewId = crypto.randomUUID()
     const now = new Date().toISOString()
-    
+
     await createReview({
       id: reviewId,
-      userId: session.user.id,
+      userId: user.userId,
       topicId,
       askId,
       question,
@@ -41,7 +57,7 @@ export async function POST(request: Request) {
       eventId: crypto.randomUUID(),
       eventName: 'review_saved',
       timestamp: now,
-      userId: session.user.id,
+      userId: user.userId,
       sessionId: 'web',
       topicId,
       domain: null,

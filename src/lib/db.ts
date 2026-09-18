@@ -208,18 +208,24 @@ export async function createAsk(ask: {
 
 export async function updateAskFeedback(askId: string, userId: string, helpful: boolean, reason?: string) {
   const now = new Date().toISOString()
+  const ask = await getAskById(userId, askId)
+  const sk = ask ? `ASK#${ask.createdAt}#${ask.id}` : undefined
+  if (!ask || !sk) throw new Error('Ask not found')
   await db.send(new UpdateCommand({
     TableName: TABLES.ASKS,
-    Key: { PK: `USER#${userId}`, SK: askId },
+    Key: { PK: `USER#${userId}`, SK: sk },
     UpdateExpression: 'SET helpful = :h, feedbackReason = :r, updatedAt = :now',
     ExpressionAttributeValues: { ':h': helpful, ':r': reason || null, ':now': now }
   }))
 }
 
 export async function markAskSavedToReview(askId: string, userId: string) {
+  const ask = await getAskById(userId, askId)
+  const sk = ask ? `ASK#${ask.createdAt}#${ask.id}` : undefined
+  if (!ask || !sk) throw new Error('Ask not found')
   await db.send(new UpdateCommand({
     TableName: TABLES.ASKS,
-    Key: { PK: `USER#${userId}`, SK: askId },
+    Key: { PK: `USER#${userId}`, SK: sk },
     UpdateExpression: 'SET savedToReview = :true',
     ExpressionAttributeValues: { ':true': true }
   }))
@@ -234,6 +240,11 @@ export async function getUserAsks(userId: string, limit = 50) {
     Limit: limit
   }))
   return result.Items as any[]
+}
+
+export async function getAskById(userId: string, askId: string) {
+  const asks = await getUserAsks(userId, 100)
+  return asks.find(a => a.id === askId) as any
 }
 
 // Review operations
@@ -283,7 +294,7 @@ export async function updateReviewRating(reviewId: string, userId: string, ratin
   await db.send(new UpdateCommand({
     TableName: TABLES.REVIEWS,
     Key: { PK: `USER#${userId}`, SK: `REVIEW#${reviewId}` },
-    UpdateExpression: 'SET reviewCount = reviewCount + :inc, lastRating = :rating, nextReviewAt = :next, #status = :completed, updatedAt = :now',
+    UpdateExpression: 'SET reviewCount = reviewCount + :inc, lastRating = :rating, nextReviewAt = :next, #status = :completed, updatedAt = :now, GSI1SK = :next',
     ExpressionAttributeNames: { '#status': 'status' },
     ExpressionAttributeValues: {
       ':inc': 1,

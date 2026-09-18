@@ -304,6 +304,7 @@ async function submitFeedback(helpful) {
     await apiRequest('/ask/feedback', {
       method: 'POST',
       body: JSON.stringify({
+        extension_session_token: await getExtensionToken(),
         askId: currentAskId,
         helpful,
         reason
@@ -334,7 +335,10 @@ async function handleSaveReview() {
   try {
     await apiRequest('/ask/save-review', {
       method: 'POST',
-      body: JSON.stringify({ askId: currentAskId })
+      body: JSON.stringify({
+        extension_session_token: await getExtensionToken(),
+        askId: currentAskId
+      })
     })
     
     saveReviewBtn.disabled = true

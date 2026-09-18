@@ -74,7 +74,7 @@ export default function TodayPage() {
                 </div>
                 <p className="text-neutral-600 dark:text-neutral-400 text-sm mb-2">
                   Big-O, time & space complexity analysis. Every interview starts with "what is the time complexity?"
-                </div>
+                </p>
                 <div className="flex items-center gap-4 text-sm text-neutral-500 dark:text-neutral-400">
                   <span className="flex items-center gap-1"><BookOpen className="h-3 w-3" /> 3 resources</span>
                   <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> 90 min</span>

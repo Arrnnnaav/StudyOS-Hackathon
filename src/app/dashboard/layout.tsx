@@ -75,7 +75,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   {item.name}
                 </Link>
               )
-            )}
+            })}
           </nav>
           
           {/* User Menu */}

@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { getTopicProgress, recordQuestionAsked } from '@/lib/db'
+import { getUserProgress, getTopicProgress, recordQuestionAsked } from '@/lib/db'
 import { dsaFoundations } from '@/data/dsa-curriculum'
 import { NextResponse } from 'next/server'
 

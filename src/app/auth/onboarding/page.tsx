@@ -63,14 +63,6 @@ export default function OnboardingPage() {
     }
   }
 
-  if (status === 'loading') {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>
-  }
-
-  if (status === 'unauthenticated') {
-    return null
-  }
-
   if (step === 1) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-950 px-4 py-12">

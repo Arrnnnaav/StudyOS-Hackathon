@@ -110,7 +110,7 @@ export default function RoadmapPage() {
                             </div>
                             <p className="text-neutral-600 dark:text-neutral-400 text-sm line-clamp-2">
                               {topic.description}
-                            </div>
+                            </p>
                             <div className="flex items-center gap-3 mt-2 text-xs text-neutral-500 dark:text-neutral-400">
                               <span className="flex items-center gap-1">
                                 <span className="h-3 w-3" />
@@ -140,7 +140,7 @@ export default function RoadmapPage() {
                     </Card>
                   </Link>
                 )
-              )}
+              })}
             </div>
           </section>
         ))}

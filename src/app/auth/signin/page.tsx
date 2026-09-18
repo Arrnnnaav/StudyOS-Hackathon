@@ -1,15 +1,23 @@
 'use client'
 
 import { signIn } from 'next-auth/react'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
-import { ArrowRight, Mail, Lock, Github, Chrome } from 'lucide-react'
+import { ArrowRight, Mail, Lock, Globe, AtSign } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function SignInPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <SignInForm />
+    </Suspense>
+  )
+}
+
+function SignInForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard/today'
@@ -27,7 +35,7 @@ export default function SignInPage() {
     }
   }
 
-  const handleCredentialsSignIn = async (e: React.FormEvent) => {
+  const handleCredentialsSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setIsLoading(true)
     setError('')
@@ -61,7 +69,7 @@ export default function SignInPage() {
             className="w-full gap-2"
             size="lg"
           >
-            <Chrome className="h-5 w-5" />
+            <Globe className="h-5 w-5" />
             Continue with Google
             <ArrowRight className="h-4 w-4 ml-auto" />
           </Button>
