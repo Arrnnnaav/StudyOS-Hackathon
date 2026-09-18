@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyOS - Point & Ask</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', sans-serif; }
+    .prose { max-width: none; }
+    .prose code { background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.25rem; font-size: 0.875em; }
+    .prose pre { background: #1f2937; color: #e5e7eb; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+    .prose pre code { background: none; padding: 0; }
+    .dark .prose code { background: #374151; }
+  </style>
+</head>
+<body class="bg-neutral-50 dark:bg-neutral-950 min-h-screen">
+  <div id="app" class="h-full flex flex-col">
+    <!-- Header -->
+    <header class="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="text-lg font-bold text-emerald-600 dark:text-emerald-400">StudyOS</span>
+        <span class="text-xs text-neutral-500 dark:text-neutral-400">Point & Ask</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <select id="levelSelect" class="text-xs px-2 py-1 border border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100">
+          <option value="student">Student</option>
+          <option value="eli5">ELI5</option>
+          <option value="expert">Expert</option>
+        </select>
+        <label class="flex items-center gap-1 text-xs text-neutral-500 dark:text-neutral-400 cursor-pointer">
+          <input type="checkbox" id="researchToggle" class="w-4 h-4 rounded border-neutral-300 dark:border-neutral-600 text-emerald-600 focus:ring-emerald-500" />
+          Research
+        </label>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-y-auto p-4 space-y-4" id="mainContent">
+      <!-- Empty State -->
+      <div id="emptyState" class="text-center py-12">
+        <div class="text-6xl mb-4">🎯</div>
+        <h2 class="text-xl font-semibold text-neutral-900 dark:text-neutral-100 mb-2">Select something to ask about</h2>
+        <p className="text-neutral-500 dark:text-neutral-400 mb-4">
+          1. Select code or text on any page<br>
+          2. Press <kbd class="px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded">Alt+Shift+A</kbd> or right-click → "Ask StudyOS"<br>
+          3. Type your question here
+        </p>
+        <div class="space-y-2">
+          <button id="openSidePanelBtn" class="w-full px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
+            Open Side Panel
+          </button>
+          <button id="pairBtn" class="w-full px-4 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+            Pair with StudyOS
+          </button>
+        </div>
+      </div>
+
+      <!-- Question Form (hidden initially) -->
+      <div id="questionForm" class="hidden space-y-4">
+        <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-lg">📄</span>
+            <span class="font-medium text-neutral-900 dark:text-neutral-100">Selected Content</span>
+            <span id="domainBadge" class="ml-auto text-xs px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 rounded"></span>
+          </div>
+          <pre id="selectedTextDisplay" class="bg-neutral-100 dark:bg-neutral-900 rounded p-3 text-sm max-h-40 overflow-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300"></pre>
+        </div>
+        
+        <div>
+          <label class="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">Your Question</label>
+          <textarea id="questionInput" rows="3" class="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 dark:placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Why do we use <= instead of < here?"></textarea>
+        </div>
+        
+        <div class="flex gap-2">
+          <button id="askBtn" class="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50">
+            Ask StudyOS
+          </button>
+          <button id="cancelBtn" class="px-4 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      <!-- Answer Display (hidden initially) -->
+      <div id="answerDisplay" class="hidden space-y-4">
+        <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4">
+          <div class="flex items-center justify-between mb-3">
+            <span class="font-medium text-neutral-900 dark:text-neutral-100">Answer</span>
+            <button id="newQuestionBtn" class="text-sm text-emerald-600 dark:text-emerald-400 hover:underline">New Question</button>
+          </div>
+          <div id="answerContent" class="prose prose-sm dark:prose-invert max-w-none"></div>
+        </div>
+
+        <!-- Feedback & Actions -->
+        <div class="flex flex-wrap gap-2">
+          <button id="helpfulBtn" class="px-3 py-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors">
+            👍 Helpful
+          </button>
+          <button id="notHelpfulBtn" class="px-3 py-1.5 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors">
+            👎 Not Helpful
+          </button>
+          <button id="saveReviewBtn" class="px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors">
+            📚 Save to Review
+          </button>
+        </div>
+
+        <!-- History -->
+        <div class="border-t border-neutral-200 dark:border-neutral-800 pt-4">
+          <h3 class="font-medium text-neutral-900 dark:text-neutral-100 mb-2">Recent Questions</h3>
+          <div id="historyList" class="space-y-2 max-h-60 overflow-y-auto"></div>
+        </div>
+      </div>
+
+      <!-- Pairing Flow -->
+      <div id="pairingFlow" class="hidden space-y-4">
+        <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4">
+          <h3 class="font-semibold text-neutral-900 dark:text-neutral-100 mb-2">Connect to StudyOS</h3>
+          <p class="text-sm text-neutral-500 dark:text-neutral-400 mb-4">
+            Enter the 6-character pairing code from your StudyOS dashboard.
+          </p>
+          <input type="text" id="pairingCodeInput" maxlength="6" class="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-center text-xl tracking-widest uppercase font-mono" placeholder="ABC123" />
+          <div class="flex gap-2 mt-4">
+            <button id="submitPairBtn" class="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
+              Connect
+            </button>
+            <button id="cancelPairBtn" class="px-4 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

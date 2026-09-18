@@ -1,0 +1,6 @@
+allowBuilds:
+  canvas: true
+  core-js: true
+  protobufjs: true
+  sharp: false
+  unrs-resolver: false

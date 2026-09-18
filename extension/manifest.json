@@ -1,0 +1,46 @@
+{
+  "name": "StudyOS - Point & Ask",
+  "version": "0.1.0",
+  "manifest_version": 3,
+  "description": "Select any code or text, ask a question, get a grounded explanation from AWS Bedrock. Save to review queue.",
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "storage",
+    "scripting",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["sidepanel.html", "sidepanel.js", "styles.css"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "StudyOS - Point & Ask",
+    "default_popup": "popup.html"
+  }
+}
