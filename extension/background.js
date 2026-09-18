@@ -1,7 +1,17 @@
 // StudyOS Extension Background Script
-// Handles auth, pairing, and API communication
+// Handles auth, pairing, API communication, and the spatial Point & Ask overlay.
 
-const API_BASE = 'http://localhost:3000/api' // Change to production URL
+// API base: override via chrome.storage.local `studyos_api_base`, else localhost.
+const DEFAULT_API_BASE = 'http://localhost:3000/api'
+let API_BASE = DEFAULT_API_BASE
+async function apiBase() {
+  try {
+    const { studyos_api_base } = await chrome.storage.local.get('studyos_api_base')
+    return studyos_api_base || DEFAULT_API_BASE
+  } catch {
+    return DEFAULT_API_BASE
+  }
+}
 const STORAGE_KEYS = {
   EXTENSION_TOKEN: 'studyos_extension_token',
   DEVICE_ID: 'studyos_device_id',
@@ -47,7 +57,7 @@ async function clearExtensionToken() {
 
 // Pair with pairing code
 async function pairWithCode(code) {
-  const response = await fetch(`${API_BASE}/extension/pair`, {
+  const response = await fetch(`${await apiBase()}/extension/pair`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code: code.toUpperCase() })
@@ -65,7 +75,7 @@ async function pairWithCode(code) {
 
 // Create pairing code
 async function createPairingCode(email) {
-  const response = await fetch(`${API_BASE}/extension/pair-code`, {
+  const response = await fetch(`${await apiBase()}/extension/pair-code`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email })
@@ -94,7 +104,7 @@ async function apiRequest(endpoint, options = {}) {
   }
   headers['X-Device-ID'] = deviceId
   
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const response = await fetch(`${await apiBase()}${endpoint}`, {
     ...options,
     headers
   })
@@ -204,6 +214,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     async OPEN_SIDE_PANEL() {
       await chrome.sidePanel.open({ windowId: sender.tab?.windowId })
       sendResponse({ success: true })
+    },
+
+    // ---- Spatial Point & Ask (rectangle/circle/pen) ----
+    async TOGGLE_SPATIAL() {
+      try {
+        const res = await toggleSpatial(sender.tab)
+        sendResponse(res)
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message })
+      }
+    },
+    async SPATIAL_ASK({ payload }) {
+      try {
+        const token = await getExtensionToken()
+        const res = await fetch(`${await apiBase()}/spatial/ask`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Device-ID': await getDeviceId(), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ ...payload, extension_session_token: token })
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) return sendResponse({ ok: false, code: data.error?.code, error: data.error?.message || `request failed (${res.status})` })
+        sendResponse({ ok: true, ...data })
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message })
+      }
+    },
+    async SPATIAL_FEEDBACK({ askId, helpful }) {
+      try {
+        await submitFeedback(askId, helpful, null)
+        sendResponse({ ok: true })
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message })
+      }
+    },
+    async SPATIAL_SAVE_REVIEW({ askId }) {
+      try {
+        const result = await saveToReview(askId)
+        sendResponse({ ok: true, ...result })
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message })
+      }
     }
   }
   
@@ -246,5 +297,23 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     })
   }
 })
+
+// ---- Spatial Point & Ask: Alt+Shift+A injection + API proxy ----
+chrome.commands.onCommand.addListener(async (command, tab) => {
+  if (command === 'toggle-spatial') {
+    toggleSpatial(tab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0]).catch(() => {})
+  }
+})
+
+// Inject config + geometry + the overlay content script, then open it.
+async function toggleSpatial(tab) {
+  if (!tab || tab.id == null) return { ok: false, error: 'no active tab' }
+  const [{ result: loaded } = {}] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => Boolean(window.__studyosSpatialLoaded) })
+  if (!loaded) {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['config.js', 'geometry.js', 'spatial-content.js'] })
+  }
+  const res = await chrome.tabs.sendMessage(tab.id, { type: 'spatial:toggle' })
+  return res || { ok: true }
+}
 
 console.log('StudyOS background script loaded')

@@ -1,0 +1,208 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  StudyOS — "Ship It" backing store + one extra AWS service (S3 for Point & Ask crops).
+  Provisions the DynamoDB tables the Next.js app (apps/web route handlers) reads/writes,
+  the Cognito user pool for identity, an S3 bucket for Point & Ask region crops, Bedrock
+  invoke permission, and CloudWatch visibility.
+  The web app is deployed separately via Amplify; set its env vars from this stack's outputs.
+
+Parameters:
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-3-haiku-20240307-v1:0
+    Description: Grounded-answer model for Point & Ask. Must be enabled in the account/region.
+  Environment:
+    Type: String
+    Default: hackathon
+
+Resources:
+  # ---------------- Identity: Cognito ----------------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub studyos-users-${Environment}
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      PasswordPolicy:
+        MinimumLength: 8
+        RequireLowercase: true
+      Schema:
+        - Name: name
+          Required: true
+      UserPoolTags: { stack: studyos, environment: !Ref Environment }
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: studyos-web
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+
+  # ---------------- State: DynamoDB (pay per request; hackathon scale) ----------------
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+        - { AttributeName: GSI1PK, AttributeType: S }
+        - { AttributeName: GSI1SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - { AttributeName: GSI1PK, KeyType: HASH }
+            - { AttributeName: GSI1SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+
+  ProgressTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+
+  AsksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+        - { AttributeName: GSI1PK, AttributeType: S }
+        - { AttributeName: GSI1SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - { AttributeName: GSI1PK, KeyType: HASH }
+            - { AttributeName: GSI1SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+
+  ReviewsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+        - { AttributeName: GSI1PK, AttributeType: S }
+        - { AttributeName: GSI1SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - { AttributeName: GSI1PK, KeyType: HASH }
+            - { AttributeName: GSI1SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+
+  EventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+
+  ExtensionTokensTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+
+  PairingCodesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+
+  # ---------------- One honest extra AWS service: S3 for Point & Ask crops ----------------
+  CropBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub studyos-crops-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins: ["https://*.amplifyapp.com", "http://localhost:3000", "chrome-extension://*"]
+            AllowedMethods: [GET, PUT]
+            AllowedHeaders: ["content-type", "authorization", "x-device-id"]
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          - Id: purge-old-crops
+            Status: Enabled
+            ExpirationInDays: 7
+
+  # ---------------- AI: Bedrock invoke permission ----------------
+  BedrockPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream, bedrock:Converse]
+            Resource: "*"
+          - Effect: Allow
+            Action: [s3:PutObject, s3:GetObject]
+            Resource: !Sub "${CropBucket.Arn}/*"
+          - Effect: Allow
+            Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:Scan, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:BatchWriteItem]
+            Resource:
+              - !GetAtt UsersTable.Arn
+              - !GetAtt ProgressTable.Arn
+              - !GetAtt AsksTable.Arn
+              - !GetAtt ReviewsTable.Arn
+              - !GetAtt EventsTable.Arn
+              - !GetAtt ExtensionTokensTable.Arn
+              - !GetAtt PairingCodesTable.Arn
+
+  # ---------------- Observability: CloudWatch ----------------
+  StudyLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /studyos/${Environment}
+      RetentionInDays: 7
+
+Outputs:
+  ApiBaseUrl:
+    Description: Base URL for the web app + extension API (the Amplify-deployed app).
+    Value: !Sub "https://"  # Amplify app URL — set manually
+  UserPoolId: { Value: !Ref UserPool }
+  UserPoolClientId: { Value: !Ref UserPoolClient }
+  Region: { Value: !Ref AWS::Region }
+  BedrockModelId: { Value: !Ref BedrockModelId }
+  CropBucketName: { Value: !Ref CropBucket }
+  Tables:
+    Value: !Join [",", ["StudyOSUsers", "StudyOSProgress", "StudyOSAsks", "StudyOSReviews", "StudyOSEvents", "StudyOSExtensionTokens", "StudyOSPairingCodes"]]

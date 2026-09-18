@@ -8,13 +8,14 @@ import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Separator } from '@/components/ui/separator'
-import { LayoutDashboard, BookOpen, Clock, BarChart, Settings, LogOut, BookMarked, Flame } from 'lucide-react'
+import { LayoutDashboard, BookOpen, Clock, BarChart, Settings, LogOut, BookMarked, Flame, FolderPlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navigation = [
   { name: 'Today', href: '/dashboard/today', icon: Flame },
   { name: 'Roadmap', href: '/dashboard/roadmap', icon: BookOpen },
   { name: 'Topics', href: '/dashboard/topics', icon: BookMarked },
+  { name: 'Custom Topics', href: '/dashboard/custom-topics', icon: FolderPlus },
   { name: 'Review', href: '/dashboard/review', icon: Clock },
   { name: 'Progress', href: '/dashboard/progress', icon: BarChart },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },

@@ -1,8 +1,8 @@
 {
   "name": "StudyOS - Point & Ask",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "manifest_version": 3,
-  "description": "Select any code or text, ask a question, get a grounded explanation from AWS Bedrock. Save to review queue.",
+  "description": "Circle or select any code or text, ask a question, get a grounded explanation from AWS Bedrock. Save to review queue.",
   "permissions": [
     "activeTab",
     "contextMenus",
@@ -14,8 +14,13 @@
     "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "toggle-spatial": {
+      "suggested_key": { "default": "Alt+Shift+A" },
+      "description": "Start or stop Point & Ask marking on the current page"
+    }
   },
   "side_panel": {
     "default_path": "sidepanel.html"
@@ -30,7 +35,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["sidepanel.html", "sidepanel.js", "styles.css"],
+      "resources": ["sidepanel.html", "sidepanel.js", "styles.css", "config.js", "geometry.js", "spatial-content.js"],
       "matches": ["<all_urls>"]
     }
   ],

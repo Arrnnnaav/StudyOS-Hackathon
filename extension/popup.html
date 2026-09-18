@@ -4,17 +4,21 @@
   <meta charset="UTF-8">
   <title>StudyOS</title>
   <style>
-    body { width: 220px; font-family: Inter, system-ui, sans-serif; padding: 14px; background: #0a0a0a; color: #ededed; }
+    body { width: 230px; font-family: Inter, system-ui, sans-serif; padding: 14px; background: #0a0a0a; color: #ededed; }
     h2 { font-size: 14px; margin: 0 0 8px; color: #34d399; }
     p { font-size: 12px; line-height: 1.5; margin: 0 0 12px; color: #a3a3a3; }
-    button { width: 100%; background: #059669; color: #fff; border: none; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+    button { width: 100%; background: #059669; color: #fff; border: none; padding: 9px; border-radius: 8px; cursor: pointer; font-size: 13px; margin-bottom: 6px; }
     button:hover { background: #047857; }
+    button.secondary { background: #1f2937; }
+    button.secondary:hover { background: #374151; }
+    kbd { background: #111827; border: 1px solid #374151; border-radius: 4px; padding: 0 4px; font-size: 11px; }
   </style>
 </head>
 <body>
   <h2>StudyOS • Point &amp; Ask</h2>
-  <p>Select code or text, then press <strong>Alt+Shift+A</strong> or right-click → <strong>Ask StudyOS</strong>. The side panel opens with your selection.</p>
-  <button id="openPanel">Open Side Panel</button>
+  <p>Circle the code or text that is confusing you, then ask. Grounded answers from AWS Bedrock.</p>
+  <button id="spatialBtn">🖍️ Circle &amp; Ask <br><small>(or press <kbd>Alt+Shift+A</kbd>)</small></button>
+  <button id="openPanel" class="secondary">📄 Ask about selected text / history</button>
   <script src="popup.js"></script>
 </body>
 </html>

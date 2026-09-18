@@ -413,3 +413,105 @@ export async function getEventsByUser(userId: string, limit = 100) {
   }))
   return result.Items as any[]
 }
+
+// ---------- Custom topics (Tier-2) ----------
+// Stored in the users table under PK=USER#<id>, SK=CUSTOMTOPIC#<id>.
+export async function createCustomTopic(topic: Record<string, unknown>) {
+  const now = new Date().toISOString()
+  await db.send(new PutCommand({
+    TableName: TABLES.USERS,
+    Item: {
+      PK: `USER#${topic.userId}`,
+      SK: `CUSTOMTOPIC#${topic.id}`,
+      ...topic,
+      createdAt: now,
+      GSI1PK: `USER#${topic.userId}`,
+      GSI1SK: now
+    }
+  }))
+  return topic
+}
+
+export async function getCustomTopics(userId: string) {
+  const result = await db.send(new QueryCommand({
+    TableName: TABLES.USERS,
+    KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+    ExpressionAttributeValues: {
+      ':pk': `USER#${userId}`,
+      ':prefix': 'CUSTOMTOPIC#'
+    }
+  }))
+  return result.Items as any[]
+}
+
+export async function deleteCustomTopic(userId: string, topicId: string) {
+  await db.send(new DeleteCommand({
+    TableName: TABLES.USERS,
+    Key: { PK: `USER#${userId}`, SK: `CUSTOMTOPIC#${topicId}` }
+  }))
+}
+
+// ---------- Anonymous device → user adoption (Tier-1) ----------
+// Stored in users table under PK=DEVICE#<id>, SK=META, storing userId + created.
+export async function recordDeviceUser(deviceId: string, userId: string) {
+  await db.send(new PutCommand({
+    TableName: TABLES.USERS,
+    Item: {
+      PK: `DEVICE#${deviceId}`,
+      SK: 'META',
+      userId,
+      createdAt: new Date().toISOString()
+    }
+  }))
+}
+
+export async function getDeviceUser(deviceId: string) {
+  const result = await db.send(new GetCommand({
+    TableName: TABLES.USERS,
+    Key: { PK: `DEVICE#${deviceId}`, SK: 'META' }
+  }))
+  return result.Item as any
+}
+
+/** Move anonymous event/ask rows under anon-<deviceId> onto the real account. */
+export async function adoptAnonymousData(deviceId: string, userId: string) {
+  const anonId = `anon-${deviceId}`
+  // Reassociate asks
+  const asks = await db.send(new QueryCommand({
+    TableName: TABLES.ASKS,
+    KeyConditionExpression: 'PK = :pk',
+    ExpressionAttributeValues: { ':pk': `USER#${anonId}` }
+  }))
+  for (const ask of asks.Items || []) {
+    await db.send(new PutCommand({
+      TableName: TABLES.ASKS,
+      Item: {
+        ...ask,
+        PK: `USER#${userId}`,
+        SK: ask.SK,
+        GSI1PK: `TOPIC#${ask.topicId || 'none'}`,
+        GSI1SK: ask.createdAt || new Date().toISOString()
+      }
+    }))
+    await db.send(new DeleteCommand({
+      TableName: TABLES.ASKS,
+      Key: { PK: `USER#${anonId}`, SK: ask.SK }
+    }))
+  }
+  // Reassociate progress
+  const progress = await db.send(new QueryCommand({
+    TableName: TABLES.PROGRESS,
+    KeyConditionExpression: 'PK = :pk',
+    ExpressionAttributeValues: { ':pk': `USER#${anonId}` }
+  }))
+  for (const row of progress.Items || []) {
+    await db.send(new PutCommand({
+      TableName: TABLES.PROGRESS,
+      Item: { ...row, PK: `USER#${userId}` }
+    }))
+    await db.send(new DeleteCommand({
+      TableName: TABLES.PROGRESS,
+      Key: { PK: `USER#${anonId}`, SK: row.SK }
+    }))
+  }
+}

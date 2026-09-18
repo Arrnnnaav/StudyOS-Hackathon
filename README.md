@@ -140,21 +140,27 @@ StudyOS-Hackathon/
 - ✅ 14-topic DSA curriculum with curated resources
 - ✅ Topic pages with objectives, resources, evidence
 - ✅ Chrome Extension MV3 (side panel, text selection, Alt+Shift+A)
-- ✅ Point & Ask → Bedrock grounded answer with citations
+- ✅ **Spatial Point & Ask** — rectangle / circle / freehand marking over any page, grounded on the circled text
+- ✅ Point & Ask → Bedrock grounded answer (grounding excerpts, insufficient-context detection)
 - ✅ Helpful/Not Helpful feedback
 - ✅ Save to Review → Spaced repetition (Again/Good)
 - ✅ Review queue with Again/Good scheduling
+- ✅ **Resource Coverage Lite** — paste any resource and see Strong/Moderate/Weak/Missing per objective
+- ✅ **Per-topic Quiz** ("check your understanding") with evidence recording
+- ✅ **Custom Topics** — students add their own learning goals to the roadmap
+- ✅ **Anonymous device adoption** — use it without an account, sign in to keep history
 - ✅ Event tracking (signup, ask, feedback, review)
 - ✅ Operator dashboard (metrics, funnel, domains, errors)
 - ✅ Extension pairing via 6-char code
+- ✅ **SAM stack** (`infra/template.yaml`): Cognito, 7 DynamoDB tables, Bedrock IAM, CloudWatch, **S3 for Point & Ask crops**
 
 ## Not Built (Post-Hack)
-- ❌ Rectangle selection / PDF support
-- ❌ Resource coverage analysis
+- ❌ PDF viewer inside the extension (extension is web-only for now; the overlay already reads PDF text anchors when a viewer is present)
 - ❌ Multiple curriculum tracks
-- ❌ Full mastery model
+- ❌ Full mastery model (0–100)
 - ❌ Semantic ingestion pipeline (DocCluster)
 - ❌ Step Functions / EventBridge / OpenSearch
+- ❌ Research mode web-search grounding (replaced by Bedrock-grounded answers on circled text)
 
 ## Team
 **Arnav Khandelwal** - Solo founder, 2nd year engineering student

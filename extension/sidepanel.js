@@ -56,7 +56,7 @@ function getExtensionToken() {
     chrome.storage.local.get('studyos_extension_token', (result) => {
       resolve(result.studyos_extension_token || null)
     })
-  }
+  })
 }
 
 function saveExtensionToken(token) {
@@ -187,7 +187,7 @@ function getDeviceId() {
       }
       resolve(deviceId)
     })
-  }
+  })
 }
 
 function showEmptyState() {
@@ -292,7 +292,7 @@ function getStoredSelection() {
     chrome.storage.session.get('studyos_pending_selection', (result) => {
       resolve(result.studyos_pending_selection)
     })
-  }
+  })
 }
 
 async function submitFeedback(helpful) {

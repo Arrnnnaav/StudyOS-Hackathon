@@ -12,6 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ChevronRight, CheckCircle, Circle, BookOpen, Lock, AlertCircle, Clock, Sparkles, RotateCcw } from 'lucide-react'
 import Link from 'next/link'
 import { dsaFoundations } from '@/data/dsa-curriculum'
+import { CoverageChecker } from '@/components/coverage-checker'
+import { QuizRunner } from '@/components/quiz-runner'
 
 export default function TopicPage() {
   const { data: session, status } = useSession()
@@ -125,6 +127,8 @@ export default function TopicPage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="objectives">Objectives ({topic.objectives.length})</TabsTrigger>
           <TabsTrigger value="resources">Resources ({topic.resources.length})</TabsTrigger>
+          <TabsTrigger value="coverage">Coverage</TabsTrigger>
+          <TabsTrigger value="quiz">Quiz</TabsTrigger>
           <TabsTrigger value="practice">Practice</TabsTrigger>
         </TabsList>
 
@@ -256,6 +260,16 @@ export default function TopicPage() {
               </CardContent>
             </Card>
           ))}
+        </TabsContent>
+
+        {/* Coverage Tab */}
+        <TabsContent value="coverage">
+          <CoverageChecker topicId={topic.id} />
+        </TabsContent>
+
+        {/* Quiz Tab */}
+        <TabsContent value="quiz">
+          <QuizRunner topicId={topic.id} />
         </TabsContent>
 
         {/* Practice Tab */}
