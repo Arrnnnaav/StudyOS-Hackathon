@@ -29,8 +29,8 @@ function deps(fetchImpl: typeof fetch, overrides: Partial<ResearchDependencies> 
       bedrockEnabled: true,
       bedrockApiKey: 'test-bedrock-key',
       bedrockModel: 'openai.test-model',
-      groqApiKey: 'test-groq-key',
-      groqModel: 'groq/compound',
+      geminiApiKey: 'test-gemini-key',
+      geminiModel: 'gemini-2.5-flash',
       timeoutMs: 30_000,
       failureThreshold: 3,
       cooldownMs: 30_000,
@@ -76,57 +76,67 @@ test('rejects an answer without valid provider citations', async () => {
     research(input, deps(async () => jsonResponse({
       choices: [{ message: { content: 'An answer with no citations.' } }],
     }), {
-      config: { bedrockEnabled: false, groqApiKey: 'test-groq-key' },
+      config: { bedrockEnabled: false, geminiApiKey: 'test-gemini-key' },
     })),
     ResearchUnavailableError,
   )
 })
 
-test('falls back to Groq Compound exactly once when Bedrock is unavailable', async () => {
+test('falls back to Gemini Google Search exactly once when Bedrock is unavailable', async () => {
   const calls: string[] = []
   const result = await research(input, deps(async (url) => {
     calls.push(String(url))
     if (String(url).includes('bedrock')) return jsonResponse({ error: 'not entitled' }, 403)
     return jsonResponse({
-      choices: [{
-        message: {
-          content: 'Groq cited answer.',
-          citations: ['https://docs.example.com/research'],
+      candidates: [{
+        content: { parts: [{ text: 'Gemini cited answer.' }] },
+        groundingMetadata: {
+          groundingChunks: [{ web: { uri: 'https://docs.example.com/research', title: 'Research source' } }],
         },
       }],
     })
   }))
 
-  assert.equal(result.provider, 'groq-compound')
+  assert.equal(result.provider, 'gemini-google-search')
   assert.equal(result.sources[0]?.url, 'https://docs.example.com/research')
   assert.equal(calls.filter((url) => url.includes('bedrock')).length, 1)
-  assert.equal(calls.filter((url) => url.includes('groq')).length, 1)
+  assert.equal(calls.filter((url) => url.includes('generativelanguage.googleapis.com')).length, 1)
 })
 
-test('enables Groq citations with the provider API wire value', async () => {
+test('uses Gemini Google Search and never accepts a response without grounding sources', async () => {
   let requestBody: Record<string, unknown> | undefined
-  await research(input, deps(async (_url, init) => {
+  await assert.rejects(research(input, deps(async (_url, init) => {
     requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
-    return jsonResponse({ choices: [{ message: { content: 'Cited answer.', citations: ['https://example.com/source'] } }] })
-  }, { config: { bedrockEnabled: false, groqApiKey: 'test-groq-key' } }))
+    return jsonResponse({ candidates: [{ content: { parts: [{ text: 'Unsourced answer.' }] } }] })
+  }, { config: { bedrockEnabled: false, geminiApiKey: 'test-gemini-key' } })), ResearchUnavailableError)
 
-  assert.equal(requestBody?.citation_options, 'enabled')
+  assert.deepEqual(requestBody?.tools, [{ google_search: {} }])
+})
+
+test('uses Gemini grounding chunks as cited sources', async () => {
+  const result = await research(input, deps(async () => jsonResponse({
+    candidates: [{
+      content: { parts: [{ text: 'Cited answer from Gemini grounding.' }] },
+      groundingMetadata: { groundingChunks: [{ web: { title: 'Official source', uri: 'https://docs.example.com/current' } }] },
+    }],
+  }), { config: { bedrockEnabled: false, geminiApiKey: 'test-gemini-key' } }))
+  assert.equal(result.sources[0]?.url, 'https://docs.example.com/current')
 })
 
 test('reports an unavailable provider separately from insufficient evidence', async () => {
   await assert.rejects(
-    research(input, deps(async () => jsonResponse({ error: 'unavailable' }, 503), { config: { bedrockEnabled: false, groqApiKey: 'test-groq-key' } })),
+    research(input, deps(async () => jsonResponse({ error: 'unavailable' }, 503), { config: { bedrockEnabled: false, geminiApiKey: 'test-gemini-key' } })),
     ResearchProviderUnavailableError,
   )
 })
 
-test('does not call Groq when Bedrock returned an uncited answer', async () => {
+test('does not call Gemini when Bedrock returned an uncited answer', async () => {
   const calls: string[] = []
   await assert.rejects(research(input, deps(async (url) => {
     calls.push(String(url))
     return jsonResponse({ output_text: 'Unsourced answer', output: [] })
   })), ResearchUnavailableError)
-  assert.equal(calls.filter((url) => url.includes('groq')).length, 0)
+  assert.equal(calls.filter((url) => url.includes('generativelanguage.googleapis.com')).length, 0)
 })
 
 test('opens the Bedrock circuit after three consecutive failures for thirty seconds', async () => {
@@ -136,9 +146,7 @@ test('opens the Bedrock circuit after three consecutive failures for thirty seco
   const fetchImpl: typeof fetch = async (url) => {
     calls.push(String(url))
     if (String(url).includes('bedrock')) return jsonResponse({ error: 'not entitled' }, 403)
-    return jsonResponse({
-      choices: [{ message: { content: 'Cited fallback answer.', citations: ['https://example.com/source'] } }],
-    })
+    return jsonResponse({ candidates: [{ content: { parts: [{ text: 'Cited fallback answer.' }] }, groundingMetadata: { groundingChunks: [{ web: { uri: 'https://example.com/source' } }] } }] })
   }
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -148,7 +156,7 @@ test('opens the Bedrock circuit after three consecutive failures for thirty seco
   await research(input, deps(fetchImpl, { now: () => now, circuit: state }))
 
   assert.equal(calls.filter((url) => url.includes('bedrock')).length, 3)
-  assert.equal(calls.filter((url) => url.includes('groq')).length, 4)
+  assert.equal(calls.filter((url) => url.includes('generativelanguage.googleapis.com')).length, 4)
 })
 
 test('research participates in stable request identity but ephemeral extension fields do not', () => {

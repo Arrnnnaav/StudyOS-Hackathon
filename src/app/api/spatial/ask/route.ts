@@ -119,7 +119,7 @@ export async function POST(request: Request) {
           question, answer: researched.answer, model: researched.provider, provider: researched.provider, sources: researched.sources, latencyMs, helpful: null, feedbackReason: null, savedToReview: false, createdAt: new Date().toISOString(),
         })
         await completeAskReservation(user.userId, idempotencyKey, response)
-        void trackEvent({ eventId: crypto.randomUUID(), eventName: 'research_succeeded', timestamp: new Date().toISOString(), userId: user.userId, sessionId: 'spatial', topicId: null, domain: null, properties: { research_provider: researched.provider, latencyMs, citation_count: researched.sources.length, fallback_used: researched.provider === 'groq-compound', result_class: 'succeeded' } }).catch(() => {})
+        void trackEvent({ eventId: crypto.randomUUID(), eventName: 'research_succeeded', timestamp: new Date().toISOString(), userId: user.userId, sessionId: 'spatial', topicId: null, domain: null, properties: { research_provider: researched.provider, latencyMs, citation_count: researched.sources.length, fallback_used: researched.provider === 'gemini-google-search', result_class: 'succeeded' } }).catch(() => {})
         return NextResponse.json(response, { headers: { 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': String(Math.max(0, quota.limit - quota.count)), 'X-Research-Provider': researched.provider } })
       } catch (error) {
         const code = researchErrorCode(error)

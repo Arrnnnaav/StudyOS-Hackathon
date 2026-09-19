@@ -8,7 +8,7 @@ export type ResearchResult = {
   answer: string
   sources: ResearchSource[]
   cited: string[]
-  provider: 'bedrock-web-search' | 'groq-compound'
+  provider: 'bedrock-web-search' | 'gemini-google-search'
 }
 
 export type ResearchInput = {
@@ -24,8 +24,8 @@ export type ResearchConfig = {
   bedrockRegion: string
   bedrockApiKey: string
   bedrockModel: string
-  groqApiKey: string
-  groqModel: string
+  geminiApiKey: string
+  geminiModel: string
   timeoutMs: number
   failureThreshold: number
   cooldownMs: number
@@ -72,8 +72,8 @@ function configuredResearch(): ResearchConfig {
     bedrockRegion: process.env.BEDROCK_WEB_SEARCH_REGION || process.env.AWS_REGION || 'us-east-1',
     bedrockApiKey: process.env.BEDROCK_MANTLE_API_KEY || '',
     bedrockModel: process.env.BEDROCK_WEB_SEARCH_MODEL || 'openai.gpt-5.6-terra',
-    groqApiKey: process.env.GROQ_API_KEY || '',
-    groqModel: process.env.GROQ_RESEARCH_MODEL || 'groq/compound',
+    geminiApiKey: process.env.GEMINI_API_KEY || '',
+    geminiModel: process.env.GEMINI_RESEARCH_MODEL || 'gemini-2.5-flash',
     timeoutMs: Number(process.env.RESEARCH_PROVIDER_TIMEOUT_MS || 30_000),
     failureThreshold: Number(process.env.RESEARCH_BEDROCK_FAILURE_THRESHOLD || 3),
     cooldownMs: Number(process.env.RESEARCH_BEDROCK_COOLDOWN_MS || 30_000),
@@ -106,6 +106,10 @@ function sourceCandidates(input: unknown): SourceCandidate[] {
     if (typeof item === 'string') return [{ url: item }]
     if (!item || typeof item !== 'object') return []
     const record = item as Record<string, unknown>
+    const web = record.web && typeof record.web === 'object' ? record.web as Record<string, unknown> : undefined
+    if (web && typeof web.uri === 'string') {
+      return [{ url: web.uri, title: typeof web.title === 'string' ? web.title : undefined }]
+    }
     const url = record.url ?? record.source_url
     const title = record.title ?? record.source_title
     return typeof url === 'string' ? [{ url, title: typeof title === 'string' ? title : undefined }] : []
@@ -167,12 +171,21 @@ function bedrockAnnotations(body: Record<string, unknown>): unknown[] {
   })
 }
 
-function groqMessage(body: Record<string, unknown>): { answer: string; citations: unknown } {
-  const choice = Array.isArray(body.choices) ? body.choices[0] : undefined
-  const message = choice && typeof choice === 'object' ? (choice as { message?: unknown }).message : undefined
-  if (!message || typeof message !== 'object') return { answer: '', citations: [] }
-  const record = message as { content?: unknown; citations?: unknown }
-  return { answer: typeof record.content === 'string' ? record.content.trim() : '', citations: record.citations ?? [] }
+function geminiMessage(body: Record<string, unknown>): { answer: string; citations: unknown } {
+  const candidate = Array.isArray(body.candidates) ? body.candidates[0] : undefined
+  if (!candidate || typeof candidate !== 'object') return { answer: '', citations: [] }
+  const record = candidate as { content?: unknown; groundingMetadata?: unknown }
+  const content = record.content && typeof record.content === 'object' ? record.content as { parts?: unknown } : undefined
+  const parts = Array.isArray(content?.parts) ? content.parts : []
+  const answer = parts.flatMap((part) => (
+    part && typeof part === 'object' && typeof (part as { text?: unknown }).text === 'string'
+      ? [(part as { text: string }).text]
+      : []
+  )).join('\n').trim()
+  const metadata = record.groundingMetadata && typeof record.groundingMetadata === 'object'
+    ? record.groundingMetadata as { groundingChunks?: unknown }
+    : undefined
+  return { answer, citations: metadata?.groundingChunks ?? [] }
 }
 
 async function requestJson(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number, retryTransient: boolean): Promise<Record<string, unknown>> {
@@ -217,19 +230,17 @@ async function callBedrock(prompt: string, config: ResearchConfig, fetchImpl: ty
   return { answer, sources, cited: sources.map((source) => source.url) }
 }
 
-async function callGroq(prompt: string, config: ResearchConfig, fetchImpl: typeof fetch): Promise<Omit<ResearchResult, 'provider'>> {
-  const body = await requestJson(fetchImpl, 'https://api.groq.com/openai/v1/chat/completions', {
+async function callGemini(prompt: string, config: ResearchConfig, fetchImpl: typeof fetch): Promise<Omit<ResearchResult, 'provider'>> {
+  const body = await requestJson(fetchImpl, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.geminiModel)}:generateContent`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${config.groqApiKey}`, 'content-type': 'application/json' },
+    headers: { 'x-goog-api-key': config.geminiApiKey, 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: config.groqModel,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 1_200,
-      citation_options: 'enabled',
-      search_settings: { enabled: true },
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      tools: [{ google_search: {} }],
+      generationConfig: { maxOutputTokens: 1_200, temperature: 0.2 },
     }),
-  }, config.timeoutMs, false)
-  const { answer, citations } = groqMessage(body)
+  }, config.timeoutMs, true)
+  const { answer, citations } = geminiMessage(body)
   const sources = normalizeSources(citations)
   if (!answer || sources.length === 0) throw new ResearchUnavailableError()
   return { answer, sources, cited: sources.map((source) => source.url) }
@@ -264,10 +275,10 @@ export async function research(input: ResearchInput, deps: ResearchDependencies 
     }
   }
 
-  if (config.groqApiKey) {
+  if (config.geminiApiKey) {
     try {
-      const result = await callGroq(prompt, config, fetchImpl)
-      return { ...result, provider: 'groq-compound' }
+      const result = await callGemini(prompt, config, fetchImpl)
+      return { ...result, provider: 'gemini-google-search' }
     } catch (error) {
       if (error instanceof ResearchUnavailableError) throw error
       throw new ResearchProviderUnavailableError()
