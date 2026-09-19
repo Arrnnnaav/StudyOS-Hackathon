@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { getUserById } from '@/lib/db'
+import { getStudentLearningSummary, getStudentProfile } from '@/lib/db'
 import { NextResponse } from 'next/server'
 
 export async function GET() {
@@ -9,19 +9,11 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const user = await getUserById(session.user.id)
+  const user = await getStudentProfile(session.user.id)
   
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  return NextResponse.json({
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    image: user.image,
-    year: user.year,
-    activeTrack: user.activeTrack,
-    createdAt: user.createdAt
-  })
+  return NextResponse.json({ profile: user, learningSummary: await getStudentLearningSummary(session.user.id) })
 }

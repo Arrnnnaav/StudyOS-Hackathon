@@ -1,29 +1,19 @@
+import { auth } from '@/lib/auth'
 import { createPairingCode } from '@/lib/db'
+import { generatePairingCode } from '@/lib/extension-pairing'
 import { NextResponse } from 'next/server'
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
-    const { email } = await request.json()
-    
-    if (!email) {
-      return NextResponse.json({ error: 'Email required' }, { status: 400 })
-    }
+    const session = await auth()
+    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    // Generate 6-character pairing code
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase()
+    const code = generatePairingCode()
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutes
 
-    // In production, we'd look up user by email and store code
-    // For hackathon, we'll store code with a placeholder user lookup
-    await createPairingCode(code, 'pending-email-lookup', expiresAt)
+    await createPairingCode(code, session.user.id, expiresAt)
 
-    // TODO: Send email with code (use SES or similar)
-    // For hackathon demo, return code directly
-    return NextResponse.json({ 
-      code, 
-      expiresAt,
-      message: 'Check your email for the pairing code' 
-    })
+    return NextResponse.json({ code, expiresAt })
 
   } catch (error) {
     console.error('Pair code error:', error)

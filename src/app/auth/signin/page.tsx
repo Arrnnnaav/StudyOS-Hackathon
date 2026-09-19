@@ -17,7 +17,7 @@ export default function SignInPage() {
 
 function SignInForm() {
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard/today'
+  const callbackUrl = searchParams.get('callbackUrl') || '/auth/continue'
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 

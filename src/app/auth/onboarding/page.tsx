@@ -2,151 +2,49 @@
 
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { FormEvent, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { ArrowRight, Target, BookOpen, CheckCircle } from 'lucide-react'
-import { useRouter as useNextRouter } from 'next/navigation'
-import { dsaFoundations } from '@/data/dsa-curriculum'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
-const tracks = [
-  {
-    key: 'dsa-foundations',
-    name: 'DSA Foundations',
-    description: 'Master Data Structures & Algorithms from scratch. 14 topics, curated resources, prerequisite-aware progression.',
-    yearMin: 1,
-    yearMax: 2,
-    duration: '14 weeks',
-    topics: 14,
-    icon: Target
-  }
-]
+type FormFields = {
+  name: string; phone: string; college: string; branch: string; year: string; activeTrack: string
+  github: string; linkedin: string; leetcode: string
+}
+
+const initialFields: FormFields = { name: '', phone: '', college: '', branch: '', year: '', activeTrack: 'dsa-foundations', github: '', linkedin: '', leetcode: '' }
 
 export default function OnboardingPage() {
-  const { data: session, status, update } = useSession()
+  const { data: session, status } = useSession()
   const router = useRouter()
-  const [step, setStep] = useState(1) // 1: year, 2: track
-  const [year, setYear] = useState<number | null>(null)
-  const [track, setTrack] = useState<string | null>(null)
+  const [fields, setFields] = useState<FormFields>(initialFields)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  if (status === 'loading') {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>
-  }
+  if (status === 'loading') return <div className="min-h-screen grid place-items-center">Loading…</div>
+  if (status === 'unauthenticated') { router.replace('/auth/signin'); return null }
 
-  if (status === 'unauthenticated') {
-    return null // Will redirect via layout
-  }
-
-  const handleYearSelect = (y: number) => {
-    setYear(y)
-    setStep(2)
-  }
-
-  const handleTrackSelect = async (t: string) => {
-    setTrack(t)
-    
-    // Update user in backend
+  const update = (key: keyof FormFields, value: string) => setFields((current) => ({ ...current, [key]: value }))
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError('')
+    setSaving(true)
     try {
-      await fetch('/api/onboarding', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ year, track: t })
-      })
-      
-      // Update session
-      await update({ year, activeTrack: t })
-      
-      router.push('/dashboard/today')
+      const response = await fetch('/api/onboarding', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...fields, name: fields.name || session?.user?.name || '', year: Number(fields.year) }) })
+      const body = await response.json()
+      if (!response.ok) throw new Error(body.error || 'We could not save your profile')
+      router.replace('/dashboard/today')
       router.refresh()
-    } catch (err) {
-      console.error('Onboarding error:', err)
-    }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'We could not save your profile')
+    } finally { setSaving(false) }
   }
 
-  if (step === 1) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-950 px-4 py-12">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="flex justify-center mb-4">
-              <span className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">StudyOS</span>
-            </div>
-            <CardTitle className="text-2xl">What year are you in?</CardTitle>
-            <CardDescription>
-              This helps us personalize your roadmap
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {[1, 2, 3, 4].map(y => (
-              <Button
-                key={y}
-                variant="outline"
-                className="w-full justify-start gap-3"
-                onClick={() => handleYearSelect(y)}
-              >
-                <span className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center font-semibold text-emerald-700 dark:text-emerald-300">
-                  {y}
-                </span>
-                <div className="text-left">
-                  <p className="font-medium">Year {y}</p>
-                  <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                    {y === 1 ? 'Foundation building' : y === 2 ? 'Core patterns' : y === 3 ? 'Placement prep' : 'Advanced topics'}
-                  </p>
-                </div>
-              </Button>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+  return <main className="min-h-screen bg-neutral-50 px-4 py-10 dark:bg-neutral-950"><Card className="mx-auto w-full max-w-2xl"><CardHeader><CardTitle>Set up your learning profile</CardTitle><CardDescription>Complete this once to personalise your StudyOS plan. Your Google email stays read-only.</CardDescription></CardHeader><CardContent><form onSubmit={submit} className="grid gap-5 sm:grid-cols-2"><Field label="Full name" value={fields.name || session?.user?.name || ''} onChange={(value) => update('name', value)} required /><div><Label>Google email</Label><Input value={session?.user?.email || ''} disabled className="mt-2" /></div><Field label="10-digit phone number" value={fields.phone} onChange={(value) => update('phone', value.replace(/\D/g, '').slice(0, 10))} inputMode="numeric" required /><Field label="College / university" value={fields.college} onChange={(value) => update('college', value)} required /><Field label="Course / branch" value={fields.branch} onChange={(value) => update('branch', value)} required /><div><Label htmlFor="year">Current year</Label><select id="year" required value={fields.year} onChange={(event) => update('year', event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select year</option>{[1, 2, 3, 4].map((year) => <option key={year} value={year}>Year {year}</option>)}</select></div><div className="sm:col-span-2"><Label htmlFor="track">Learning track</Label><select id="track" value={fields.activeTrack} onChange={(event) => update('activeTrack', event.target.value)} className="mt-2 h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="dsa-foundations">DSA Foundations</option></select></div><p className="sm:col-span-2 text-sm text-neutral-500">Optional public learning profiles</p><Field label="GitHub URL" value={fields.github} onChange={(value) => update('github', value)} type="url" /><Field label="LinkedIn URL" value={fields.linkedin} onChange={(value) => update('linkedin', value)} type="url" /><Field label="LeetCode URL" value={fields.leetcode} onChange={(value) => update('leetcode', value)} type="url" />{error && <p role="alert" className="sm:col-span-2 text-sm text-red-600">{error}</p>}<div className="sm:col-span-2 flex justify-end"><Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save and open dashboard'}</Button></div></form></CardContent></Card></main>
+}
 
-  // Step 2: Track selection
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50 dark:bg-neutral-950 px-4 py-12">
-      <Card className="w-full max-w-2xl">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <span className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">StudyOS</span>
-          </div>
-          <CardTitle className="text-2xl">What do you want to work on?</CardTitle>
-          <CardDescription>
-            Year {year} • Choose your focus track
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {tracks.filter(t => t.yearMin <= (year || 0) && t.yearMax >= (year || 0)).map(t => (
-            <Button
-              key={t.key}
-              variant="outline"
-              className="w-full justify-start gap-4 p-6 h-auto text-left"
-              onClick={() => handleTrackSelect(t.key)}
-              disabled={!t}
-            >
-              <t.icon className="h-10 w-10 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-              <div className="text-left flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="font-semibold text-lg">{t.name}</h3>
-                  <span className="px-2 py-0.5 text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded-full">
-                    {t.duration}
-                  </span>
-                </div>
-                <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-2">{t.description}</p>
-                <div className="flex items-center gap-4 text-xs text-neutral-500 dark:text-neutral-400">
-                  <span className="flex items-center gap-1">
-                    <BookOpen className="h-3 w-3" />
-                    {t.topics} topics
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-3 h-3" />
-                    Years {t.yearMin}–{t.yearMax}
-                  </span>
-                </div>
-              </div>
-            </Button>
-          ))}
-        </CardContent>
-      </Card>
-    </div>
-  )
+function Field({ label, value, onChange, required, type = 'text', inputMode }: { label: string; value: string; onChange: (value: string) => void; required?: boolean; type?: string; inputMode?: 'numeric' }) {
+  const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  return <div><Label htmlFor={id}>{label}</Label><Input id={id} className="mt-2" value={value} onChange={(event) => onChange(event.target.value)} required={required} type={type} inputMode={inputMode} /></div>
 }

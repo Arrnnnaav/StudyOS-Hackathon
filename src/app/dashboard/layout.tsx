@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { BookOpen, Clock, BarChart, Settings, LogOut, BookMarked, Flame, FolderPlus, Building2, Menu, X } from 'lucide-react'
+import { BookOpen, Clock, BarChart, Settings, LogOut, BookMarked, Flame, FolderPlus, Building2, Menu, X, UserRound } from 'lucide-react'
 import { signOut } from 'next-auth/react'
 import { cn } from '@/lib/utils'
 
@@ -19,6 +19,7 @@ const navigation = [
   { name: 'Organization', href: '/dashboard/organization', icon: Building2 },
   { name: 'Review', href: '/dashboard/review', icon: Clock },
   { name: 'Progress', href: '/dashboard/progress', icon: BarChart },
+  { name: 'Profile', href: '/dashboard/profile', icon: UserRound },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ]
 

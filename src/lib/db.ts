@@ -460,18 +460,12 @@ export async function createPairingCode(code: string, userId: string, expiresAt:
 }
 
 export async function consumePairingCode(code: string) {
-  const result = await db.send(new GetCommand({
+  const result = await db.send(new DeleteCommand({
     TableName: TABLES.PAIRING_CODES,
-    Key: { PK: `PAIR#${code}`, SK: 'META' }
+    Key: { PK: `PAIR#${code}`, SK: 'META' },
+    ReturnValues: 'ALL_OLD',
   }))
-  const item = result.Item as any
-  if (item) {
-    await db.send(new DeleteCommand({
-      TableName: TABLES.PAIRING_CODES,
-      Key: { PK: `PAIR#${code}`, SK: 'META' }
-    }))
-  }
-  return item
+  return result.Attributes as any
 }
 
 // Event tracking

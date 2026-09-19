@@ -14,6 +14,7 @@ export default function SettingsPage() {
   const [pairingCode, setPairingCode] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [pairingError, setPairingError] = useState('')
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -32,17 +33,17 @@ export default function SettingsPage() {
   const generateCode = async () => {
     setGenerating(true)
     setCopied(false)
+    setPairingError('')
     try {
       const res = await fetch('/api/extension/pair-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: session?.user?.email })
       })
-      if (!res.ok) throw new Error('Failed to generate code')
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed to generate code')
       const data = await res.json()
       setPairingCode(data.code)
     } catch (err) {
-      console.error('Pair code error:', err)
+      setPairingError(err instanceof Error ? err.message : 'Failed to generate code')
     } finally {
       setGenerating(false)
     }
@@ -137,6 +138,7 @@ export default function SettingsPage() {
               {generating ? 'Generating...' : 'Get pairing code'}
             </Button>
           )}
+          {pairingError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{pairingError}</p>}
 
           <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
             <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-2">
@@ -148,7 +150,7 @@ export default function SettingsPage() {
               <li>Click <strong>Load unpacked</strong> and select the <code>/extension</code> folder</li>
             </ol>
             <a
-              href="#"
+              href="/dashboard/settings/pairing-guide"
               className="inline-flex items-center gap-1 text-sm text-emerald-600 dark:text-emerald-400 mt-3 hover:underline"
             >
               <ExternalLink className="h-3 w-3" /> Read the pairing guide
