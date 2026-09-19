@@ -56,3 +56,6 @@ next-env.d.ts
 
 # Extension
 extension/dist/
+
+# Agent worktrees
+.worktrees/
