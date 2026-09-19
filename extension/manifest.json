@@ -11,7 +11,7 @@
     "sidePanel"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://learninghq.in/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -25,20 +25,6 @@
   "side_panel": {
     "default_path": "sidepanel.html"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle",
-      "all_frames": false
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["sidepanel.html", "sidepanel.js", "styles.css", "config.js", "geometry.js", "spatial-content.js"],
-      "matches": ["<all_urls>"]
-    }
-  ],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test --test-isolation=none src/shared/**/*.test.ts",
+    "test": "node --test --test-isolation=none src/shared/**/*.test.ts extension/**/*.test.mjs",
     "test:web": "node --env-file=.env.local --test --test-isolation=none src/lib/**/*.test.ts"
   },
   "dependencies": {

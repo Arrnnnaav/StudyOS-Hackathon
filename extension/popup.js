@@ -1,11 +1,11 @@
 // StudyOS popup - opens the side panel or starts a spatial (circle/box) Point & Ask.
 document.getElementById('openPanel').addEventListener('click', async () => {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    await chrome.sidePanel.open({ windowId: tab.windowId })
+    const response = await chrome.runtime.sendMessage({ type: 'CAPTURE_SELECTION' })
+    if (!response?.ok) throw new Error(response?.error || 'Select text on the page first.')
     window.close()
   } catch (e) {
-    alert('Could not open side panel: ' + e.message)
+    alert(e.message)
   }
 })
 

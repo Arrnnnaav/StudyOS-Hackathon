@@ -1,6 +1,6 @@
 // StudyOS Extension Side Panel Script
 
-const API_BASE = 'http://localhost:3000/api' // Change to production URL
+const API_BASE = 'https://learninghq.in/api'
 
 // DOM Elements
 const emptyState = document.getElementById('emptyState')
@@ -76,7 +76,6 @@ async function loadPendingSelection() {
       const selection = result.studyos_pending_selection
       if (selection) {
         showQuestionForm(selection)
-        chrome.storage.session.remove('studyos_pending_selection')
       }
       resolve()
     })
@@ -321,6 +320,7 @@ async function handleAsk() {
     
     showAnswerDisplay(response)
     questionInput.value = ''
+    chrome.storage.session.remove('studyos_pending_selection')
   } catch (error) {
     alert('Error: ' + error.message)
   } finally {
