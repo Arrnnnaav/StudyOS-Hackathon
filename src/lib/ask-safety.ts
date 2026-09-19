@@ -39,6 +39,7 @@ export function askRequestHash(input: {
   question: string
   context: { selected_text: string; nearby_before?: string; nearby_after?: string; domain?: string; page_title?: string }
   level?: string
+  research?: boolean
 }): string {
   const canonical = JSON.stringify({
     topicId: input.topicId,
@@ -49,6 +50,7 @@ export function askRequestHash(input: {
     domain: input.context.domain ?? '',
     page: input.context.page_title ?? '',
     level: input.level ?? 'student',
+    research: input.research === true,
   })
   return createHash('sha256').update(canonical).digest('hex')
 }
@@ -132,4 +134,8 @@ export function takeDailySpatialQuota(userId: string, limit = Number(process.env
 
 export function takeDailyCoverageQuota(userId: string, limit = Number(process.env.COVERAGE_DAILY_LIMIT || 10)) {
   return takeDailyAskQuota(`coverage:${userId}`, limit)
+}
+
+export function takeDailyResearchQuota(userId: string, limit = Number(process.env.RESEARCH_DAILY_LIMIT || 5)) {
+  return takeDailyAskQuota(`research:${userId}`, limit)
 }

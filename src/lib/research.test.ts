@@ -7,6 +7,7 @@ import {
   ResearchUnavailableError,
   type ResearchDependencies,
 } from './research.ts'
+import { askRequestHash } from './ask-safety.ts'
 
 const input = {
   question: 'What is the current status of this public technology?',
@@ -121,4 +122,27 @@ test('opens the Bedrock circuit after three consecutive failures for thirty seco
 
   assert.equal(calls.filter((url) => url.includes('bedrock')).length, 3)
   assert.equal(calls.filter((url) => url.includes('groq')).length, 4)
+})
+
+test('research participates in stable request identity but ephemeral extension fields do not', () => {
+  const base = {
+    topicId: null,
+    question: 'Explain this selection',
+    context: {
+      selected_text: 'selected text',
+      nearby_before: 'before',
+      nearby_after: 'after',
+      domain: 'example.edu',
+      page_title: 'Example',
+    },
+    level: 'student',
+  }
+  const ordinaryRequest = { ...base, research: false, extension_session_token: 'ephemeral-a' }
+  const researchRequest = { ...base, research: true, extension_session_token: 'ephemeral-b' }
+  const replayRequest = { ...base, research: true, extension_session_token: 'ephemeral-c' }
+  const ordinary = askRequestHash(ordinaryRequest)
+  const researchHash = askRequestHash(researchRequest)
+
+  assert.notEqual(ordinary, researchHash)
+  assert.equal(researchHash, askRequestHash(replayRequest))
 })

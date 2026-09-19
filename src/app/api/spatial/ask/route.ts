@@ -108,7 +108,7 @@ export async function POST(request: Request) {
     })
 
     let answer: string
-    let provider = 'none'
+    let provider: 'bedrock'
     try {
       answer = await invokeModel({ system: RESOLVED_SYSTEM, user: prompt, maxTokens: 900, temperature: 0.3 })
       provider = 'bedrock'

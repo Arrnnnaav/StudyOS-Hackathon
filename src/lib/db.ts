@@ -272,15 +272,24 @@ export async function createAsk(ask: {
   feedbackReason: string | null
   savedToReview: boolean
   createdAt: string
+  provider?: string
+  sources?: Array<{ id: string; title: string; url: string }>
 }) {
+  const { sources, ...storedAsk } = ask
+  const safeSources = sources?.slice(0, 10).map((source) => ({
+    id: source.id,
+    title: source.title,
+    url: source.url,
+  }))
   await db.send(new PutCommand({
     TableName: TABLES.ASKS,
     Item: {
       PK: `USER#${ask.userId}`,
       SK: `ASK#${ask.createdAt}#${ask.id}`,
-      ...ask,
-      GSI1PK: `TOPIC#${ask.topicId || 'none'}`,
-      GSI1SK: ask.createdAt
+      ...storedAsk,
+      ...(safeSources ? { sources: safeSources } : {}),
+      GSI1PK: `TOPIC#${storedAsk.topicId || 'none'}`,
+      GSI1SK: storedAsk.createdAt
     }
   }))
 }
