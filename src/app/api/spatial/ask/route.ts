@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveApiUser } from '@/lib/auth-utils'
+import { takeDailySpatialQuota } from '@/lib/ask-safety'
 import { createAsk, trackEvent } from '@/lib/db'
 import { invokeModel, MODEL_ID } from '@/lib/bedrock'
 import { anchorsToContext } from '@/shared/spatial'
@@ -37,6 +38,14 @@ export async function POST(request: Request) {
     if (!question) return NextResponse.json(errorBody('BAD_REQUEST', 'question is required'), { status: 400 })
     if (question.length > MAX_QUESTION) return NextResponse.json(errorBody('TOO_LONG', 'question too long'), { status: 400 })
     if (!marks.length) return NextResponse.json(errorBody('BAD_REQUEST', 'at least one mark is required'), { status: 400 })
+
+    const quota = await takeDailySpatialQuota(user.userId)
+    if (!quota.allowed) {
+      return NextResponse.json(errorBody('RATE_LIMITED', `daily Point & Ask limit (${quota.limit}) reached`), {
+        status: 429,
+        headers: { 'Retry-After': String(quota.retryAfterSeconds), 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': '0' },
+      })
+    }
 
     // Convert DOM/PDF anchors into candidate objects.
     const candidates: CandidateObject[] = anchors.map((a) => ({
@@ -174,7 +183,7 @@ export async function POST(request: Request) {
       alternatives: target.alternatives,
     }
     response.nearby_context = nearby
-    return NextResponse.json(response)
+    return NextResponse.json(response, { headers: { 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': String(Math.max(0, quota.limit - quota.count)) } })
   } catch (error) {
     console.error('Spatial ask error:', error)
     return NextResponse.json(errorBody('INTERNAL', 'Failed to process Point & Ask'), { status: 500 })

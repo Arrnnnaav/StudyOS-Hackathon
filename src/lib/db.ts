@@ -460,12 +460,18 @@ export async function createPairingCode(code: string, userId: string, expiresAt:
 }
 
 export async function consumePairingCode(code: string) {
-  const result = await db.send(new DeleteCommand({
-    TableName: TABLES.PAIRING_CODES,
-    Key: { PK: `PAIR#${code}`, SK: 'META' },
-    ReturnValues: 'ALL_OLD',
-  }))
-  return result.Attributes as any
+  try {
+    const result = await db.send(new DeleteCommand({
+      TableName: TABLES.PAIRING_CODES,
+      Key: { PK: `PAIR#${code}`, SK: 'META' },
+      ConditionExpression: 'attribute_exists(PK)',
+      ReturnValues: 'ALL_OLD',
+    }))
+    return result.Attributes as any
+  } catch (error) {
+    if (error instanceof Error && error.name === 'ConditionalCheckFailedException') return undefined
+    throw error
+  }
 }
 
 // Event tracking

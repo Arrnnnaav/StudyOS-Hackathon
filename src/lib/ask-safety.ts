@@ -125,3 +125,11 @@ export async function takeDailyAskQuota(userId: string, limit = Number(process.e
   const count = Number(result.Attributes?.count ?? 0)
   return { allowed: count <= limit, count, limit, retryAfterSeconds: Math.max(1, Math.ceil((tomorrow - Date.now()) / 1000)) }
 }
+
+export function takeDailySpatialQuota(userId: string, limit = Number(process.env.SPATIAL_DAILY_LIMIT || 20)) {
+  return takeDailyAskQuota(`spatial:${userId}`, limit)
+}
+
+export function takeDailyCoverageQuota(userId: string, limit = Number(process.env.COVERAGE_DAILY_LIMIT || 10)) {
+  return takeDailyAskQuota(`coverage:${userId}`, limit)
+}

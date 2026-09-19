@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { dsaFoundations } from '@/data/dsa-curriculum'
 import { auth } from '@/lib/auth'
+import { takeDailyCoverageQuota } from '@/lib/ask-safety'
 import { invokeModel, extractJson, bedrockConfigured, BedrockUnavailableError, COVERAGE_MODEL_ID } from '@/lib/bedrock'
 import { classifyCoverage, overallStatus } from '@/shared/coverage'
 import type { CoverageCheckRequest, CoverageCheckResponse, CoverageStatus } from '@/shared/contracts'
@@ -23,11 +24,18 @@ export async function POST(request: Request) {
     if (content.length > MAX_CONTENT) return NextResponse.json(errorBody('TOO_LONG', `content must be under ${MAX_CONTENT} chars`), { status: 400 })
     const topic = dsaFoundations.phases.flatMap((phase) => phase.topics).find((item) => item.id === topicId)
     if (!topic) return NextResponse.json(errorBody('NOT_FOUND', 'topic not found'), { status: 404 })
+    const quota = await takeDailyCoverageQuota(session.user.id)
+    if (!quota.allowed) {
+      return NextResponse.json(errorBody('RATE_LIMITED', `daily coverage limit (${quota.limit}) reached`), {
+        status: 429,
+        headers: { 'Retry-After': String(quota.retryAfterSeconds), 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': '0' },
+      })
+    }
     let coverage: { objective: string; status: CoverageStatus; reason: string }[]
     try { coverage = await bedrockCoverage(topic.objectives, content) }
     catch { coverage = topic.objectives.map((objective, index) => ({ objective, ...classifyCoverage(topic.objectives, content)[index] })) }
     const response: CoverageCheckResponse = { topic_id: topicId, topic_title: topic.title, coverage, overall: overallStatus(coverage.map((item) => item.status)) }
-    return NextResponse.json(response)
+    return NextResponse.json(response, { headers: { 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': String(Math.max(0, quota.limit - quota.count)) } })
   } catch (error) {
     console.error('Coverage error:', error)
     return NextResponse.json(errorBody('INTERNAL', 'Failed to check coverage'), { status: 500 })
