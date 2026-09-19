@@ -2,16 +2,16 @@ import NextAuth from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { DynamoDBAdapter } from '@auth/dynamodb-adapter'
-import type { DynamoDBDocument } from '@aws-sdk/lib-dynamodb'
 import { db } from './db'
 import { TABLES } from './db'
+import { asAuthDynamoClient } from './auth-dynamodb-client'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // Required for a reverse proxy such as Amplify and for local `next start`.
   // Keep this opt-in through environment configuration instead of trusting a
   // caller-controlled Host header by default.
   trustHost: process.env.AUTH_TRUST_HOST === 'true',
-  adapter: DynamoDBAdapter(db as unknown as DynamoDBDocument, {
+  adapter: DynamoDBAdapter(asAuthDynamoClient(db), {
     tableName: TABLES.USERS,
     partitionKey: 'PK',
     sortKey: 'SK'
