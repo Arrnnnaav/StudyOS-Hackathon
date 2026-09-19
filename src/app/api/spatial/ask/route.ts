@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { resolveApiUser } from '@/lib/auth-utils'
-import { abandonAskReservation, askRequestHash, completeAskReservation, reserveAsk, takeDailyResearchQuota, takeDailySpatialQuota, waitForAskResult } from '@/lib/ask-safety'
+import { abandonAskReservation, askRequestHash, completeAskReservation, failAskReservation, reserveAsk, takeDailyResearchQuota, takeDailySpatialQuota, waitForAskResult } from '@/lib/ask-safety'
 import { createAsk, trackEvent } from '@/lib/db'
 import { invokeModel, MODEL_ID } from '@/lib/bedrock'
 import { research } from '@/lib/research'
 import { anchorsToContext } from '@/shared/spatial'
-import { resolve, candidateGeometry, describeTarget } from '@/shared/resolver'
+import { resolve, describeTarget } from '@/shared/resolver'
 import type { BBox, CandidateObject, Confidence, SpatialAnchor, SpatialAskRequest, SpatialAskResponse } from '@/shared/contracts'
 import { errorBody } from '@/shared/contracts'
 import { researchErrorCode, validateResearchRequest } from './research-helpers'
@@ -93,10 +93,13 @@ export async function POST(request: Request) {
         return NextResponse.json(errorBody('REQUEST_IN_PROGRESS', 'this research request is still processing'), { status: 409 })
       }
 
-      const quota = await takeDailyResearchQuota(user.userId)
+      const quota = reservation.quotaAlreadyCharged
+        ? { allowed: true, count: 0, limit: Number(process.env.RESEARCH_DAILY_LIMIT || 5), retryAfterSeconds: 0 }
+        : await takeDailyResearchQuota(user.userId)
       if (!quota.allowed) {
         await abandonAskReservation(user.userId, idempotencyKey)
-        return NextResponse.json(errorBody('RATE_LIMITED', `daily Research Mode limit (${quota.limit}) reached`), {
+        const resetAt = new Date(Date.now() + quota.retryAfterSeconds * 1_000).toISOString()
+        return NextResponse.json(errorBody('RATE_LIMITED', `daily Research Mode limit (${quota.limit}) reached; resets at ${resetAt}`), {
           status: 429,
           headers: { 'Retry-After': String(quota.retryAfterSeconds), 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': '0' },
         })
@@ -119,8 +122,8 @@ export async function POST(request: Request) {
         void trackEvent({ eventId: crypto.randomUUID(), eventName: 'research_succeeded', timestamp: new Date().toISOString(), userId: user.userId, sessionId: 'spatial', topicId: null, domain: null, properties: { research_provider: researched.provider, latencyMs, citation_count: researched.sources.length, fallback_used: researched.provider === 'groq-compound', result_class: 'succeeded' } }).catch(() => {})
         return NextResponse.json(response, { headers: { 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': String(Math.max(0, quota.limit - quota.count)), 'X-Research-Provider': researched.provider } })
       } catch (error) {
-        await abandonAskReservation(user.userId, idempotencyKey)
         const code = researchErrorCode(error)
+        await failAskReservation(user.userId, idempotencyKey, code)
         void trackEvent({ eventId: crypto.randomUUID(), eventName: 'research_failed', timestamp: new Date().toISOString(), userId: user.userId, sessionId: 'spatial', topicId: null, domain: null, properties: { research_provider: 'unavailable', latencyMs: Date.now() - started, citation_count: 0, fallback_used: true, result_class: code } }).catch(() => {})
         return NextResponse.json(errorBody(code, code === 'INSUFFICIENT_EVIDENCE' ? 'I could not find enough reliable sourced evidence to answer this.' : 'Research Mode is temporarily unavailable. Please retry this request.'), { status: code === 'INSUFFICIENT_EVIDENCE' ? 422 : 503 })
       }
@@ -168,7 +171,7 @@ export async function POST(request: Request) {
     try {
       answer = await invokeModel({ system: RESOLVED_SYSTEM, user: prompt, maxTokens: 900, temperature: 0.3 })
       provider = 'bedrock'
-    } catch (err) {
+    } catch {
       void trackEvent({
         eventId: crypto.randomUUID(),
         eventName: 'point_ask_failed',

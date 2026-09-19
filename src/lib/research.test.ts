@@ -4,6 +4,7 @@ import {
   buildResearchPrompt,
   normalizeSources,
   research,
+  ResearchProviderUnavailableError,
   ResearchUnavailableError,
   type ResearchDependencies,
 } from './research.ts'
@@ -100,6 +101,32 @@ test('falls back to Groq Compound exactly once when Bedrock is unavailable', asy
   assert.equal(result.sources[0]?.url, 'https://docs.example.com/research')
   assert.equal(calls.filter((url) => url.includes('bedrock')).length, 1)
   assert.equal(calls.filter((url) => url.includes('groq')).length, 1)
+})
+
+test('enables Groq citations with the provider API wire value', async () => {
+  let requestBody: Record<string, unknown> | undefined
+  await research(input, deps(async (_url, init) => {
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+    return jsonResponse({ choices: [{ message: { content: 'Cited answer.', citations: ['https://example.com/source'] } }] })
+  }, { config: { bedrockEnabled: false, groqApiKey: 'test-groq-key' } }))
+
+  assert.equal(requestBody?.citation_options, 'enabled')
+})
+
+test('reports an unavailable provider separately from insufficient evidence', async () => {
+  await assert.rejects(
+    research(input, deps(async () => jsonResponse({ error: 'unavailable' }, 503), { config: { bedrockEnabled: false, groqApiKey: 'test-groq-key' } })),
+    ResearchProviderUnavailableError,
+  )
+})
+
+test('does not call Groq when Bedrock returned an uncited answer', async () => {
+  const calls: string[] = []
+  await assert.rejects(research(input, deps(async (url) => {
+    calls.push(String(url))
+    return jsonResponse({ output_text: 'Unsourced answer', output: [] })
+  })), ResearchUnavailableError)
+  assert.equal(calls.filter((url) => url.includes('groq')).length, 0)
 })
 
 test('opens the Bedrock circuit after three consecutive failures for thirty seconds', async () => {

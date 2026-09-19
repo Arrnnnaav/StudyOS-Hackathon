@@ -29,7 +29,6 @@ const cancelPairBtn = document.getElementById('cancelPairBtn')
 const cancelPairBtn2 = document.getElementById('cancelPairBtn')
 
 const levelSelect = document.getElementById('levelSelect')
-const researchToggle = document.getElementById('researchToggle')
 
 let currentAskId = null
 let currentTopicId = null
@@ -310,7 +309,6 @@ async function handleAsk() {
       question,
       idempotency_key: crypto.randomUUID(),
       level: levelSelect.value,
-      research_mode: researchToggle.checked
     }
     emptyState.classList.add('hidden')
     questionForm.classList.add('hidden')

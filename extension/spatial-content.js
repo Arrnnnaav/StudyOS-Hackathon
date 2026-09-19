@@ -124,6 +124,11 @@
 
   function close() {
     state.open = false;
+    state.research = false;
+    if (panel) {
+      const researchInput = panel.querySelector('.research-control input');
+      if (researchInput) researchInput.checked = false;
+    }
     if (host) host.style.display = 'none';
     document.removeEventListener('keydown', onKey, true);
   }
@@ -343,7 +348,7 @@
       // Send the raw candidates + the resolved target; the server re-resolves authoritatively.
       const viewer = window.__studyosPdfViewer || null;
       const result = await send({
-        type: 'spatial:ask',
+        type: 'SPATIAL_ASK',
         payload: {
           question,
           marks,

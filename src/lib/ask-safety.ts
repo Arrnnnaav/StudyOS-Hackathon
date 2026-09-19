@@ -16,13 +16,13 @@ export type StoredAskResponse = {
 
 type IdempotencyItem = {
   requestHash?: string
-  status?: 'processing' | 'completed'
+  status?: 'processing' | 'completed' | 'failed'
   response?: object
   expiresAt?: number
 }
 
 export type IdempotencyResult<T extends object = StoredAskResponse> =
-  | { state: 'reserved' }
+  | { state: 'reserved'; quotaAlreadyCharged?: boolean }
   | { state: 'cached'; response: T }
   | { state: 'pending' }
   | { state: 'conflict' }
@@ -79,6 +79,22 @@ export async function reserveAsk<T extends object = StoredAskResponse>(userId: s
     }
     if (existing.requestHash !== requestHash) return { state: 'conflict' }
     if (existing.status === 'completed' && existing.response) return { state: 'cached', response: existing.response as T }
+    if (existing.status === 'failed') {
+      try {
+        await db.send(new UpdateCommand({
+          TableName: TABLES.ASK_SAFETY,
+          Key: itemKey,
+          UpdateExpression: 'SET #status = :processing, retriedAt = :now REMOVE failureCode',
+          ConditionExpression: '#status = :failed',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: { ':processing': 'processing', ':failed': 'failed', ':now': new Date().toISOString() },
+        }))
+        return { state: 'reserved', quotaAlreadyCharged: true }
+      } catch (retryError) {
+        if (!(retryError instanceof Error) || retryError.name !== 'ConditionalCheckFailedException') throw retryError
+        return { state: 'pending' }
+      }
+    }
     return { state: 'pending' }
   }
 }
@@ -111,6 +127,17 @@ export async function completeAskReservation<T extends object = StoredAskRespons
 
 export async function abandonAskReservation(userId: string, key: string) {
   await db.send(new DeleteCommand({ TableName: TABLES.ASK_SAFETY, Key: idempotencyKey(userId, key) }))
+}
+
+/** Keeps a failed request retryable without charging its idempotent replay again. */
+export async function failAskReservation(userId: string, key: string, failureCode: string) {
+  await db.send(new UpdateCommand({
+    TableName: TABLES.ASK_SAFETY,
+    Key: idempotencyKey(userId, key),
+    UpdateExpression: 'SET #status = :failed, failureCode = :failureCode, failedAt = :now',
+    ExpressionAttributeNames: { '#status': 'status' },
+    ExpressionAttributeValues: { ':failed': 'failed', ':failureCode': failureCode, ':now': new Date().toISOString() },
+  }))
 }
 
 export async function takeDailyAskQuota(userId: string, limit = Number(process.env.ASK_DAILY_LIMIT || 20)) {

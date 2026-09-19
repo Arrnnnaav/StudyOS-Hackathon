@@ -47,6 +47,13 @@ export class ResearchUnavailableError extends Error {
   }
 }
 
+export class ResearchProviderUnavailableError extends Error {
+  constructor() {
+    super('Research provider is unavailable.')
+    this.name = 'ResearchProviderUnavailableError'
+  }
+}
+
 class ProviderError extends Error {
   readonly retryable: boolean
 
@@ -168,8 +175,9 @@ function groqMessage(body: Record<string, unknown>): { answer: string; citations
   return { answer: typeof record.content === 'string' ? record.content.trim() : '', citations: record.citations ?? [] }
 }
 
-async function requestJson(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number): Promise<Record<string, unknown>> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+async function requestJson(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number, retryTransient: boolean): Promise<Record<string, unknown>> {
+  const attempts = retryTransient ? 2 : 1
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       const response = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
       if (response.ok) {
@@ -177,12 +185,12 @@ async function requestJson(fetchImpl: typeof fetch, url: string, init: RequestIn
         if (body && typeof body === 'object') return body as Record<string, unknown>
         throw new ProviderError(false)
       }
-      const retryable = response.status === 408 || response.status === 429 || response.status >= 500
-      if (!retryable || attempt === 1) throw new ProviderError(retryable)
+      const retryable = response.status >= 500
+      if (!retryable || attempt === attempts - 1) throw new ProviderError(retryable)
     } catch (error) {
       if (error instanceof ProviderError) {
-        if (!error.retryable || attempt === 1) throw error
-      } else if (attempt === 1) {
+        if (!error.retryable || attempt === attempts - 1) throw error
+      } else if (attempt === attempts - 1) {
         throw new ProviderError(true)
       }
     }
@@ -202,7 +210,7 @@ async function callBedrock(prompt: string, config: ResearchConfig, fetchImpl: ty
       store: false,
       tools: [{ type: 'web_search', external_web_access: true }],
     }),
-  }, config.timeoutMs)
+  }, config.timeoutMs, true)
   const answer = responseText(body)
   const sources = normalizeSources(bedrockAnnotations(body))
   if (!answer || sources.length === 0) throw new ResearchUnavailableError()
@@ -217,10 +225,10 @@ async function callGroq(prompt: string, config: ResearchConfig, fetchImpl: typeo
       model: config.groqModel,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 1_200,
-      citation_options: { enabled: true },
+      citation_options: 'enabled',
       search_settings: { enabled: true },
     }),
-  }, config.timeoutMs)
+  }, config.timeoutMs, false)
   const { answer, citations } = groqMessage(body)
   const sources = normalizeSources(citations)
   if (!answer || sources.length === 0) throw new ResearchUnavailableError()
@@ -249,7 +257,8 @@ export async function research(input: ResearchInput, deps: ResearchDependencies 
       circuit.failures = 0
       circuit.openedAt = 0
       return { ...result, provider: 'bedrock-web-search' }
-    } catch {
+    } catch (error) {
+      if (error instanceof ResearchUnavailableError) throw error
       circuit.failures += 1
       if (circuit.failures >= config.failureThreshold) circuit.openedAt = now()
     }
@@ -259,9 +268,10 @@ export async function research(input: ResearchInput, deps: ResearchDependencies 
     try {
       const result = await callGroq(prompt, config, fetchImpl)
       return { ...result, provider: 'groq-compound' }
-    } catch {
-      // An unsourced Groq answer must never become a research result.
+    } catch (error) {
+      if (error instanceof ResearchUnavailableError) throw error
+      throw new ResearchProviderUnavailableError()
     }
   }
-  throw new ResearchUnavailableError()
+  throw new ResearchProviderUnavailableError()
 }
