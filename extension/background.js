@@ -228,10 +228,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     async SPATIAL_ASK({ payload }) {
       try {
         const token = await getExtensionToken()
+        const requestPayload = {
+          ...payload,
+          research: payload?.research === true,
+          ...(payload?.idempotency_key ? { idempotency_key: payload.idempotency_key } : {}),
+        }
         const res = await fetch(`${await apiBase()}/spatial/ask`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Device-ID': await getDeviceId(), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ ...payload, extension_session_token: token })
+          body: JSON.stringify({ ...requestPayload, extension_session_token: token })
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) return sendResponse({ ok: false, code: data.error?.code, error: data.error?.message || `request failed (${res.status})` })

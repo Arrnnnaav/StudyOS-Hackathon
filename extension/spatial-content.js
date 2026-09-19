@@ -14,7 +14,7 @@
   const RECT_ONLY = CFG.features && CFG.features.rectangleOnly !== false;
   const PRIVACY = CFG.privacy || 'anchors_only';
   const STROKE = '#16a34a';
-  const state = { open: false, tool: 'rect', marks: [], busy: false, drawing: null, research: true };
+  const state = { open: false, tool: 'rect', marks: [], busy: false, drawing: null, research: false };
   let host, root, svg, toolbar, hint, panel;
 
   const CSS = `
@@ -57,6 +57,10 @@
     .ambiguous .chosen { background: #fef3c7; font-weight: 600; }
     .privacy { padding: 6px 12px 8px; border-top: 1px solid #e5e7eb; font-size: 10.5px; color: #6b7280; display: flex; flex-wrap: wrap; gap: 4px 10px; }
     .privacy .y { color: #065f46; } .privacy .n { color: #b91c1c; }
+    .research-control { display:block; margin-top:6px; font-size:11px; color:#374151; cursor:pointer; }
+    .research-disclosure { display:block; font-size:10px; color:#6b7280; margin-top:3px; }
+    .sources { margin-top:8px; padding-top:6px; border-top:1px solid #e5e7eb; font-size:11px; }
+    .sources a { display:block; color:#2563eb; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   `;
 
   function el(tag, attrs, children) {
@@ -241,6 +245,11 @@
         el('span', { class: 'n' }, ['✕ Full page']),
         el('span', { class: 'n' }, ['✕ Full screenshot']),
       ]);
+      const researchInput = el('input', { type: 'checkbox', onchange: (event) => { state.research = event.target.checked; } });
+      privacy.append(
+        el('label', { class: 'research-control' }, [researchInput, ' Search the public web with sources']),
+        el('span', { class: 'research-disclosure' }, ['Selected text and your question may be sent to web-research providers.']),
+      );
       input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(input, thread, sendButton); } e.stopPropagation(); });
       input.addEventListener('keyup', e => e.stopPropagation());
       panel.append(
@@ -323,6 +332,7 @@
     state.busy = true; sendButton.disabled = true;
     thread.append(el('div', { class: 'q' }, [question]));
     input.value = '';
+    const idempotencyKey = crypto.randomUUID();
     const answerNode = el('div', { class: 'a' }, ['Looking at what you boxed…']);
     thread.append(answerNode); thread.scrollTop = thread.scrollHeight;
     try {
@@ -345,7 +355,8 @@
             surface: viewer ? 'pdf' : 'web',
           },
           resolved_target: chosen ? { candidateId: chosen.id, confidence: picked.confidence || 'medium' } : undefined,
-          research: state.research !== false,
+          research: state.research === true,
+          idempotency_key: idempotencyKey,
         },
       });
       if (!result.ok) throw result;
@@ -358,17 +369,35 @@
         confNote ? ' · ' + confNote : '',
         (result.anchors_used && result.anchors_used.length) ? ' · ' + result.anchors_used.length + ' anchor(s)' : '',
       ].join('')));
+      appendResearchSources(answerNode, result);
       const actions = el('div', { class: 'actions' });
       answerNode.append(actions);
       const helpful = el('button', { onclick: async () => { await send({ type: 'spatial:feedback', askId: result.id, helpful: true }); helpful.classList.add('on'); helpful.textContent = '✓ Helpful'; } }, ['👍 Helpful']);
       const save = el('button', { onclick: async () => { const r = await send({ type: 'spatial:save-review', askId: result.id }); save.textContent = r.ok ? '✓ Saved to Review' : '✗ ' + (r.error || 'failed'); } }, ['📚 Save to Review']);
       actions.append(helpful, save);
     } catch (error) {
-      answerNode.textContent = error.code ? error.error : (error.error || 'Something went wrong sending your question.');
+      answerNode.textContent = error.code === 'INSUFFICIENT_EVIDENCE'
+        ? 'I could not find enough reliable sourced evidence to answer this.'
+        : error.code === 'RATE_LIMITED'
+          ? (error.error || 'Your daily Research Mode limit has been reached.')
+          : (error.error || 'Something went wrong sending your question.');
       answerNode.append(el('small', {}, [error.code || 'ERROR']));
     } finally {
       state.busy = false; sendButton.disabled = false; thread.scrollTop = thread.scrollHeight; input.focus();
     }
+  }
+
+  function appendResearchSources(answerNode, result) {
+    if (!Array.isArray(result.sources) || result.sources.length === 0) return;
+    const sources = result.sources.filter((source) => {
+      try { return new URL(source && source.url).protocol === 'https:'; } catch { return false; }
+    });
+    if (!sources.length) return;
+    const box = el('div', { class: 'sources' }, [result.provider === 'groq-compound' ? 'Groq Compound sources' : 'Bedrock Web Search sources']);
+    sources.forEach((source, index) => {
+      box.append(el('a', { href: source.url, target: '_blank', rel: 'noopener noreferrer', title: source.title || source.url }, [`${index + 1}. ${source.title || source.url}`]));
+    });
+    answerNode.append(box);
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
