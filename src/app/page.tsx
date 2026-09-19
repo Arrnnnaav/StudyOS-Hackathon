@@ -91,12 +91,12 @@ export default function LandingPage() {
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-6 max-w-4xl mx-auto">
             {[
-              { name: 'Amplify', desc: 'Hosting' },
-              { name: 'Cognito', desc: 'Auth' },
-              { name: 'API Gateway', desc: 'API' },
-              { name: 'Lambda', desc: 'Compute' },
+              { name: 'App Runner', desc: 'Hosting' },
+              { name: 'Google OAuth', desc: 'Sign-in' },
+              { name: 'Next.js', desc: 'API' },
               { name: 'DynamoDB', desc: 'State' },
               { name: 'Bedrock', desc: 'AI' },
+              { name: 'S3', desc: 'Private crops' },
               { name: 'CloudWatch', desc: 'Observability' }
             ].map(({ name, desc }) => (
               <div key={name} className="text-center p-4 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
