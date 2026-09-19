@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --test --test-isolation=none src/shared/**/*.test.ts",
-    "test:web": "node --test --test-isolation=none src/lib/**/*.test.ts"
+    "test:web": "node --env-file=.env.local --test --test-isolation=none src/lib/**/*.test.ts"
   },
   "dependencies": {
     "@auth/dynamodb-adapter": "^2.11.3",
