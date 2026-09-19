@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server'
 import { resolveApiUser } from '@/lib/auth-utils'
-import { takeDailySpatialQuota } from '@/lib/ask-safety'
+import { abandonAskReservation, askRequestHash, completeAskReservation, reserveAsk, takeDailyResearchQuota, takeDailySpatialQuota, waitForAskResult } from '@/lib/ask-safety'
 import { createAsk, trackEvent } from '@/lib/db'
 import { invokeModel, MODEL_ID } from '@/lib/bedrock'
+import { research } from '@/lib/research'
 import { anchorsToContext } from '@/shared/spatial'
 import { resolve, candidateGeometry, describeTarget } from '@/shared/resolver'
 import type { BBox, CandidateObject, Confidence, SpatialAnchor, SpatialAskRequest, SpatialAskResponse } from '@/shared/contracts'
 import { errorBody } from '@/shared/contracts'
+import { researchErrorCode, validateResearchRequest } from './research-helpers'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -38,14 +40,9 @@ export async function POST(request: Request) {
     if (!question) return NextResponse.json(errorBody('BAD_REQUEST', 'question is required'), { status: 400 })
     if (question.length > MAX_QUESTION) return NextResponse.json(errorBody('TOO_LONG', 'question too long'), { status: 400 })
     if (!marks.length) return NextResponse.json(errorBody('BAD_REQUEST', 'at least one mark is required'), { status: 400 })
-
-    const quota = await takeDailySpatialQuota(user.userId)
-    if (!quota.allowed) {
-      return NextResponse.json(errorBody('RATE_LIMITED', `daily Point & Ask limit (${quota.limit}) reached`), {
-        status: 429,
-        headers: { 'Retry-After': String(quota.retryAfterSeconds), 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': '0' },
-      })
-    }
+    const researchMode = body.research === true
+    const researchValidation = researchMode ? validateResearchRequest(question, body.idempotency_key) : null
+    if (researchValidation && !researchValidation.ok) return NextResponse.json(errorBody(researchValidation.code, researchValidation.message), { status: 400 })
 
     // Convert DOM/PDF anchors into candidate objects.
     const candidates: CandidateObject[] = anchors.map((a) => ({
@@ -77,6 +74,65 @@ export async function POST(request: Request) {
     const nearby = anchorsToContext(ranked.filter((c) => c.id !== chosen?.id), 600)
     const domain = page.url ? new URL(page.url, 'http://localhost').hostname : ''
     const desc = chosen ? describeTarget(chosen) : {}
+
+    if (researchMode && researchValidation?.ok) {
+      const idempotencyKey = `research-spatial:${researchValidation.idempotencyKey}`
+      const requestHash = askRequestHash({
+        topicId: null,
+        question,
+        level: body.level,
+        research: true,
+        context: { selected_text: (chosen?.text || '').slice(0, 800), nearby_before: nearby, domain, page_title: page.title || '' },
+      })
+      const reservation = await reserveAsk<SpatialAskResponse>(user.userId, idempotencyKey, requestHash)
+      if (reservation.state === 'cached') return NextResponse.json(reservation.response, { headers: { 'X-Idempotent-Replay': 'true' } })
+      if (reservation.state === 'conflict') return NextResponse.json(errorBody('IDEMPOTENCY_CONFLICT', 'idempotency key was used for a different request'), { status: 409 })
+      if (reservation.state === 'pending') {
+        const cached = await waitForAskResult<SpatialAskResponse>(user.userId, idempotencyKey)
+        if (cached) return NextResponse.json(cached, { headers: { 'X-Idempotent-Replay': 'true' } })
+        return NextResponse.json(errorBody('REQUEST_IN_PROGRESS', 'this research request is still processing'), { status: 409 })
+      }
+
+      const quota = await takeDailyResearchQuota(user.userId)
+      if (!quota.allowed) {
+        await abandonAskReservation(user.userId, idempotencyKey)
+        return NextResponse.json(errorBody('RATE_LIMITED', `daily Research Mode limit (${quota.limit}) reached`), {
+          status: 429,
+          headers: { 'Retry-After': String(quota.retryAfterSeconds), 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': '0' },
+        })
+      }
+
+      try {
+        const researched = await research({ question, pageTitle: page.title || '', domain, selectedText: (chosen?.text || '').slice(0, 800), nearby })
+        const latencyMs = Date.now() - started
+        const response: SpatialAskResponse = {
+          id: crypto.randomUUID(), answer: researched.answer, anchors_used: (chosen ? [chosen] : []) as SpatialAnchor[], confidence: confidenceToNum(target.confidence),
+          provider: researched.provider, model: researched.provider, vision: false, ocr: false, sources: researched.sources, cited: researched.cited,
+          resolved_target: { candidateId: target.candidateId, confidence: target.confidence, type: desc.type, label: desc.label || typeLabel(desc.type), alternatives: target.alternatives },
+          nearby_context: nearby,
+        }
+        await createAsk({
+          id: response.id, userId: user.userId, topicId: null, domain, pageTitle: page.title || '', selectedText: (chosen?.text || '').slice(0, 800), nearbyBefore: '', nearbyAfter: '',
+          question, answer: researched.answer, model: researched.provider, provider: researched.provider, sources: researched.sources, latencyMs, helpful: null, feedbackReason: null, savedToReview: false, createdAt: new Date().toISOString(),
+        })
+        await completeAskReservation(user.userId, idempotencyKey, response)
+        void trackEvent({ eventId: crypto.randomUUID(), eventName: 'research_succeeded', timestamp: new Date().toISOString(), userId: user.userId, sessionId: 'spatial', topicId: null, domain: null, properties: { research_provider: researched.provider, latencyMs, citation_count: researched.sources.length, fallback_used: researched.provider === 'groq-compound', result_class: 'succeeded' } }).catch(() => {})
+        return NextResponse.json(response, { headers: { 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': String(Math.max(0, quota.limit - quota.count)), 'X-Research-Provider': researched.provider } })
+      } catch (error) {
+        await abandonAskReservation(user.userId, idempotencyKey)
+        const code = researchErrorCode(error)
+        void trackEvent({ eventId: crypto.randomUUID(), eventName: 'research_failed', timestamp: new Date().toISOString(), userId: user.userId, sessionId: 'spatial', topicId: null, domain: null, properties: { research_provider: 'unavailable', latencyMs: Date.now() - started, citation_count: 0, fallback_used: true, result_class: code } }).catch(() => {})
+        return NextResponse.json(errorBody(code, code === 'INSUFFICIENT_EVIDENCE' ? 'I could not find enough reliable sourced evidence to answer this.' : 'Research Mode is temporarily unavailable. Please retry this request.'), { status: code === 'INSUFFICIENT_EVIDENCE' ? 422 : 503 })
+      }
+    }
+
+    const quota = await takeDailySpatialQuota(user.userId)
+    if (!quota.allowed) {
+      return NextResponse.json(errorBody('RATE_LIMITED', `daily Point & Ask limit (${quota.limit}) reached`), {
+        status: 429,
+        headers: { 'Retry-After': String(quota.retryAfterSeconds), 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': '0' },
+      })
+    }
 
     // Track start (privacy-safe — never question/answer/resolution text).
     void trackEvent({
@@ -121,7 +177,7 @@ export async function POST(request: Request) {
         sessionId: 'spatial',
         topicId: null,
         domain: null,
-        properties: { error: err instanceof Error ? err.message : 'bedrock unavailable' },
+        properties: { result_class: 'provider_unavailable' },
       }).catch(() => {})
       return NextResponse.json(errorBody('PROVIDER_UNAVAILABLE', 'No answer provider is configured on this deployment.'), { status: 503 })
     }

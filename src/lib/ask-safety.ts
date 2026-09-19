@@ -17,13 +17,13 @@ export type StoredAskResponse = {
 type IdempotencyItem = {
   requestHash?: string
   status?: 'processing' | 'completed'
-  response?: StoredAskResponse
+  response?: object
   expiresAt?: number
 }
 
-export type IdempotencyResult =
+export type IdempotencyResult<T extends object = StoredAskResponse> =
   | { state: 'reserved' }
-  | { state: 'cached'; response: StoredAskResponse }
+  | { state: 'cached'; response: T }
   | { state: 'pending' }
   | { state: 'conflict' }
 
@@ -59,7 +59,7 @@ function idempotencyKey(userId: string, key: string) {
   return { PK: `USER#${userId}`, SK: `IDEMPOTENCY#${key}` }
 }
 
-export async function reserveAsk(userId: string, key: string, requestHash: string): Promise<IdempotencyResult> {
+export async function reserveAsk<T extends object = StoredAskResponse>(userId: string, key: string, requestHash: string): Promise<IdempotencyResult<T>> {
   const now = Math.floor(Date.now() / 1000)
   const expiresAt = now + Number(process.env.ASK_IDEMPOTENCY_TTL_SECONDS || DEFAULT_IDEMPOTENCY_TTL_SECONDS)
   const itemKey = idempotencyKey(userId, key)
@@ -78,7 +78,7 @@ export async function reserveAsk(userId: string, key: string, requestHash: strin
       return reserveAsk(userId, key, requestHash)
     }
     if (existing.requestHash !== requestHash) return { state: 'conflict' }
-    if (existing.status === 'completed' && existing.response) return { state: 'cached', response: existing.response }
+    if (existing.status === 'completed' && existing.response) return { state: 'cached', response: existing.response as T }
     return { state: 'pending' }
   }
 }
@@ -89,17 +89,17 @@ export async function getReservedAsk(userId: string, key: string): Promise<Idemp
 }
 
 /** Wait briefly for a concurrent matching request instead of issuing another model call. */
-export async function waitForAskResult(userId: string, key: string, maxWaitMs = 12_000): Promise<StoredAskResponse | null> {
+export async function waitForAskResult<T extends object = StoredAskResponse>(userId: string, key: string, maxWaitMs = 12_000): Promise<T | null> {
   const deadline = Date.now() + maxWaitMs
   while (Date.now() < deadline) {
     const item = await getReservedAsk(userId, key)
-    if (item?.status === 'completed' && item.response) return item.response
+    if (item?.status === 'completed' && item.response) return item.response as T
     await new Promise((resolve) => setTimeout(resolve, 200))
   }
   return null
 }
 
-export async function completeAskReservation(userId: string, key: string, response: StoredAskResponse) {
+export async function completeAskReservation<T extends object = StoredAskResponse>(userId: string, key: string, response: T) {
   await db.send(new UpdateCommand({
     TableName: TABLES.ASK_SAFETY,
     Key: idempotencyKey(userId, key),
