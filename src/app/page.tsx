@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowRight, BookOpen, Target, Zap } from 'lucide-react'
+import { landingDescription } from '@/shared/landing-copy'
 
 export default function LandingPage() {
   return (
@@ -25,8 +26,8 @@ export default function LandingPage() {
           </h1>
           
           <p className="text-xl lg:text-2xl text-neutral-600 dark:text-neutral-400 max-w-3xl mx-auto mb-10">
-            You have YouTube, LeetCode, GitHub, and AI. But none of them tells you 
-            <strong>what to learn today</strong> — and when you get stuck, that question disappears.
+            {landingDescription.before}{' '}
+            <strong>{landingDescription.emphasis}</strong>{landingDescription.after}
           </p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">

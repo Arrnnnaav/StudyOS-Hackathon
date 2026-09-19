@@ -4,10 +4,8 @@ import { signIn } from 'next-auth/react'
 import { Suspense, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Separator } from '@/components/ui/separator'
-import { ArrowRight, Mail, Lock, Globe, AtSign } from 'lucide-react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { ArrowRight, Globe } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
 
 export default function SignInPage() {
   return (
@@ -18,7 +16,6 @@ export default function SignInPage() {
 }
 
 function SignInForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard/today'
   const [isLoading, setIsLoading] = useState(false)
@@ -33,20 +30,6 @@ function SignInForm() {
       setError('Failed to sign in with Google')
       setIsLoading(false)
     }
-  }
-
-  const handleCredentialsSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    setIsLoading(true)
-    setError('')
-    
-    const formData = new FormData(e.currentTarget)
-    const email = formData.get('email')
-    const password = formData.get('password')
-    
-    // For hackathon demo, we'll use Google OAuth primarily
-    setError('Please use Google Sign In for the hackathon demo')
-    setIsLoading(false)
   }
 
   return (
@@ -74,40 +57,9 @@ function SignInForm() {
             <ArrowRight className="h-4 w-4 ml-auto" />
           </Button>
 
-          <Separator className="my-6">Or continue with email</Separator>
-
-          {/* Email/Password Form */}
-          <form onSubmit={handleCredentialsSignIn} className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="email" className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                Email
-              </label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="you@university.edu"
-                className="w-full"
-                disabled
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                Password
-              </label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                placeholder="••••••••"
-                className="w-full"
-                disabled
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled>
-              Sign in
-            </Button>
-          </form>
+          <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
+            StudyOS currently uses Google sign-in only. Email-and-password accounts are not offered.
+          </p>
 
           {error && (
             <div className="p-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg text-center">
