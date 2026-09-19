@@ -1,161 +1,133 @@
-# StudyOS - AWS First Commit Hackathon
+# StudyOS — AWS First Commit Hackathon
 
-**Personalized Learning OS for Engineering Students**
+> Know what to learn today. Understand what stops you. Remember what matters.
 
-> "Know what to learn today. Understand what stops you. Remember what matters."
+StudyOS is a learning workflow for engineering students: choose a track, get a prerequisite-aware next action, ask a grounded question about selected code or text, and save the answer for spaced review.
 
-## Problem
+## What is built
 
-Engineering students have abundant resources (YouTube, LeetCode, GitHub, GFG, docs) but no system that:
+- Google OAuth through NextAuth, with DynamoDB-backed user data and anonymous-device adoption after sign-in.
+- A DSA Foundations track: 14 topics, curated watch/read/practice resources, prerequisite-aware Today view, topic progress, custom topics, and per-topic quizzes.
+- A Chrome MV3 side panel with pairing, text selection, and rectangle-based spatial Point & Ask (`Alt` + `Shift` + `A`). It sends selected/nearby context, never a full page or screenshot by default.
+- Grounded Bedrock answers, helpful/not-helpful feedback, saved review cards, and Again/Good spaced-repetition scheduling.
+- Resource Coverage Lite, event tracking, and an operator overview.
+- A safe Ask pipeline: idempotency, daily per-user quota, streaming, short conversation context, and model routing.
 
-1. Tells them **what to learn today** based on their year/goal
-2. Shows which resources **actually cover** each topic
-2. Lets them **ask questions** about specific code/text and get grounded answers
-4. Turns questions into **spaced reviews** for retention
+## Demo flow
 
-## Solution
-
-StudyOS connects the full learning loop:
-
-```
-Year/Track → Today Screen → Curated Resources → Point & Ask → Save to Review → Spaced Repetition → Next Action
-```
-
-## Demo Flow (90 seconds)
-
-1. **Sign up** with Google → Select Year 2 → DSA Foundations
-2. **Today Screen** → "Complexity Basics (90 min) - First topic, no prerequisites"
-3. **Open LeetCode** → Draw rectangle around confusing code → Press Alt+Shift+A
-3. **Ask**: "Why do we use `<=` instead of `<` here?"
-4. **Get grounded answer** from AWS Bedrock with citations to the exact code you circled
-5. **Mark Helpful** → "Save to Review" → Appears in Review Queue tomorrow
-6. **Review** → Answer again → Spaced repetition schedules next review
-
----
+1. Sign in with Google and choose Year 2 / DSA Foundations.
+2. Open **Today** and begin the next prerequisite-ready topic.
+3. On a page containing code or study material, press `Alt` + `Shift` + `A`, draw a rectangle, and ask a question.
+4. Watch the grounded answer stream into the extension side panel.
+5. Mark it helpful and save it to the review queue.
+6. Complete the review with Again or Good to schedule the next repetition.
 
 ## Architecture
 
-### Production architecture (single backend path)
-
-```
-┌─────────────────┐     ┌──────────────────────┐     ┌─────────────┐
-│  Chrome Ext     │────▶│  Next.js Route       │────▶│  Bedrock    │
-│  (Side Panel)   │     │  Handlers (API)      │     │  (Claude 3  │
-└─────────────────┘     │  /api/spatial/ask    │     │  Haiku)     │
-                        │  /api/coverage/check │     └─────────────┘
-                        │  /api/ask/feedback   │           │
-                        │  /api/ask/save-review│           │
-                        └──────────┬───────────┘           │
-                                   │                       ▼
-                        ┌──────────▼───────────┐  ┌─────────────────┐
-                        │  DynamoDB            │  │  S3 (Crops)     │
-                        │  Profiles, Progress, │  │  Point & Ask    │
-                        │  Asks, Reviews,      │  │  Region Crops   │
-                        │  Events, Pairings    │  └─────────────────┘
-                        └──────────────────────┘
-                                   │
-                                   ▼
-                        ┌──────────────────────┐
-                        │  AWS App Runner      │
-                        │  (Next.js 16 App)    │
-                        └──────────────────────┘
-```
-
-The production API is the **Next.js route-handler layer deployed with the App Runner-hosted app**. The extension calls the same `/api/*` routes; it does not call a separate API Gateway or Lambda service. The SAM template provisions only the AWS resources consumed by those handlers (Cognito, DynamoDB, S3, IAM, and CloudWatch). This keeps the diagram, deployed request path, and source tree aligned.
-
-### Local development
-
-```
-┌─────────────────┐     ┌──────────────────────┐     ┌─────────────┐
-│  Chrome Ext     │────▶│  Local Dev Server    │────▶│  DynamoDB   │
-│  (Side Panel)   │     │  Next.js handlers    │     │  Local      │
-└─────────────────┘     └──────────────────────┘     │  (Port 8001) │
-                                                       └─────────────┘
-```
-
----
-
-## AWS Services Used
-
-| Service | Purpose |
-|---------|---------|
-| **AWS App Runner** | Next.js 16 frontend and route-handler deployment |
-| **Cognito** | Student authentication (Google OAuth) |
-| **Next.js Route Handlers** | Production API for the web app and extension, hosted with App Runner |
-| **DynamoDB** | User state, progress, asks, reviews, events, pairings |
-| **Bedrock** | Grounded explanations (Claude 3 Haiku via Converse API) |
-| **S3** | Point & Ask crop storage (7-day lifecycle) |
-| **CloudWatch** | Logs, metrics, structured JSON logs for operator dashboard |
-| **SAM CLI** | Provisions the application's AWS resources |
-
----
-
-## Quick Start
-
-### Prerequisites
-- Node.js 20+
-- pnpm 9+
-- AWS Account (free tier)
-- Google Cloud Console project (for OAuth)
-
-### Local Development
-
-```bash
-# Clone and install
-git clone https://github.com/Arrnnnaav/StudyOS-Hackathon.git
-cd StudyOS-Hackathon
-pnpm install
-
-# Environment
-cp .env.example .env.local
-# Add your credentials
-
-# Start local DynamoDB (Docker)
-docker run -d --name dynamodb-local -p 8001:8000 amazon/dynamodb-local:latest -jar DynamoDBLocal.jar -sharedDb
-
-# Create tables
-node scripts/create-tables.mjs
-
-# Run dev server
-pnpm dev
-# Open http://localhost:3000
-```
-
-### Extension Development
-```bash
-# Load unpacked extension in Chrome
-# 1. chrome://extensions → Developer mode → Load unpacked
-# 2. Select /extension folder
-# 3. Press Alt+Shift+A on any page to start spatial Point & Ask
-```
-
-### AWS Deployment (Ship It)
-
-```bash
-# Deploy infrastructure (SAM)
-cd infra
-sam build
-sam deploy --guided
-
-# Deploy the Next.js 16 app through App Runner
-# App Runner Console → Create service → Source code repository → this repo
-# Configuration source: Repository (uses apprunner.yaml)
-# Runtime role / instance role: AppRunnerInstanceRoleArn from the SAM output
-# Configure the runtime variables listed below, then deploy.
-# Point the extension API base at the deployed App Runner URL.
-```
-
-> Hosting decision: this app stays on **Next.js 16.3.5** and deploys to **AWS App Runner (Node.js 22)**. Amplify Hosting's published SSR compatibility list currently documents Next.js through v15, so it is not the Ship It target for this branch. App Runner's managed Node.js 22 runtime supports source-repository deployments configured by `apprunner.yaml`.
-
-### App Runner runtime variables
-
-Set these in the App Runner service; keep secrets in App Runner or Secrets Manager, never in Git:
+### Production path — one backend story
 
 ```text
-AWS_REGION=<same region as SAM stack and Bedrock model>
+Web app / Chrome extension
+          |
+          v
+AWS App Runner — Next.js 16 route handlers
+  |       |             |
+  |       |             +--> Amazon Bedrock
+  |       +----------------> DynamoDB
+  +------------------------> S3 private crop storage
+                              |
+                              v
+                         CloudWatch logs
+```
+
+The real production API is the Next.js route-handler layer. There is no API Gateway or Lambda proxy in the request path. The extension calls the same `/api/*` endpoints as the web app.
+
+**Hosting decision:** the repository uses Next.js `16.3.5`, so the Ship It target is **AWS App Runner on Node.js 22**. `apprunner.yaml` is the source-repository deployment configuration. Amplify is not the target for this branch because its published Next.js SSR compatibility documentation currently stops at v15.
+
+### AWS resources
+
+| Service | Role in StudyOS |
+|---|---|
+| App Runner | Hosts the Next.js 16 app and route handlers |
+| DynamoDB | Users, progress, asks, reviews, events, extension pairing, and Ask safety state |
+| Bedrock | Claude 3.5 Haiku for Ask; Claude Sonnet 4.5 for Coverage Lite |
+| S3 | Private Point & Ask crop storage with a seven-day lifecycle |
+| CloudWatch | Application and deployment observability |
+| IAM | Temporary credentials for the running App Runner service |
+| Cognito | User pool provisioned by the stack for AWS-native identity evolution; the current web sign-in flow is Google OAuth through NextAuth |
+
+`infra/template.yaml` provisions eight DynamoDB tables. `AppRunnerInstanceRoleArn` is attached to the App Runner service, so the application receives temporary AWS credentials; never place AWS access keys in App Runner environment variables.
+
+## Ask reliability and cost controls
+
+| Control | Behaviour |
+|---|---|
+| Idempotency | `/api/ask` and `/api/ask/stream` require an `Idempotency-Key` header or `idempotency_key` body value. Same request replays the stored answer; reused keys with different payloads return `409`. |
+| Durable state | `StudyOSAskSafety` stores processing/completed requests and expires them by DynamoDB TTL. |
+| Rate limit | Each user gets `ASK_DAILY_LIMIT` model-backed asks per UTC day (default `20`). Over-limit calls receive `429` and `Retry-After`. |
+| Streaming | `/api/ask/stream` emits Server-Sent Events: `ready`, `token`, `complete`, and `error`. |
+| Context | At most two prior asks from the same user, topic, and domain are included. Selected context remains primary. |
+| Model routing | Point & Ask uses `anthropic.claude-3-5-haiku-20241022-v1:0`; Coverage Lite uses `global.anthropic.claude-sonnet-4-5-20250929-v1:0`. Both are environment-overridable. |
+
+## Local development
+
+### Prerequisites
+
+- Node.js 20+
+- pnpm 12 (Corepack is supported)
+- Docker for DynamoDB Local
+- A Google OAuth client for full sign-in testing
+
+```powershell
+git clone https://github.com/Arrnnnaav/StudyOS-Hackathon.git
+cd StudyOS-Hackathon
+corepack enable
+pnpm install
+
+Copy-Item .env.example .env.local
+
+docker run -d --name dynamodb-local -p 8001:8000 amazon/dynamodb-local:latest -jar DynamoDBLocal.jar -sharedDb
+$env:DYNAMODB_ENDPOINT = 'http://localhost:8001'
+node scripts/create-tables.mjs
+
+pnpm dev
+```
+
+Open `http://localhost:3000`. To load the extension, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `extension/`.
+
+For local DynamoDB only, set dummy AWS SDK credentials in `.env.local`; App Runner must use its instance role instead.
+
+## Deploy to AWS App Runner
+
+### 1. Prepare AWS access
+
+Do not share credentials in chat or commit them. Use AWS IAM Identity Center or another short-lived deployment role. The deployer needs permission to create the resources in `infra/template.yaml` (CloudFormation/SAM, IAM, DynamoDB, S3, Cognito, CloudWatch, and App Runner) and to enable the selected Bedrock models.
+
+In Amazon Bedrock → Model catalog, enable access to the Ask and Coverage models for the chosen region. Use the same region for the SAM stack, App Runner service, and Bedrock configuration.
+
+### 2. Deploy the infrastructure
+
+```powershell
+cd infra
+sam build
+sam deploy --guided --capabilities CAPABILITY_NAMED_IAM
+```
+
+Record the `AppRunnerInstanceRoleArn` stack output. This repository cannot claim a deployed URL until this command succeeds with your AWS account.
+
+### 3. Create the App Runner service
+
+1. App Runner console → **Create service** → **Source code repository** → select this repository.
+2. Choose **Configuration source: Repository**. App Runner reads `apprunner.yaml` from the repository root.
+3. Attach `AppRunnerInstanceRoleArn` as the service **instance role**.
+4. Add the runtime variables below; store secrets in App Runner/Secrets Manager.
+5. Deploy, then point the Chrome extension API base URL at the resulting App Runner URL.
+
+```text
+AWS_REGION=<same region as the SAM stack>
 AUTH_TRUST_HOST=true
-NEXTAUTH_URL=https://<your-app-runner-service-url>
-NEXTAUTH_SECRET=<new 32-byte random secret>
+NEXTAUTH_URL=https://<app-runner-service-url>
+NEXTAUTH_SECRET=<new random 32-byte secret>
 GOOGLE_CLIENT_ID=<Google OAuth client ID>
 GOOGLE_CLIENT_SECRET=<Google OAuth client secret>
 BEDROCK_ASK_MODEL_ID=anthropic.claude-3-5-haiku-20241022-v1:0
@@ -164,233 +136,83 @@ ASK_DAILY_LIMIT=20
 ASK_IDEMPOTENCY_TTL_SECONDS=86400
 ```
 
-Do **not** set `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` as app variables. The App Runner instance role receives temporary credentials automatically.
+Add this Google OAuth redirect URI after the App Runner URL exists:
 
----
-
-## Project Structure
-
-```
-StudyOS-Hackathon/
-├── src/
-│   ├── app/
-│   │   ├── (auth)/signin, onboarding
-│   │   ├── (dashboard)/today, roadmap, topics/[id], review, progress, settings, custom-topics
-│   │   ├── api/
-│   │   │   ├── ask, ask/feedback, ask/save-review
-│   │   │   ├── coverage/check
-│   │   │   ├── spatial/ask
-│   │   │   ├── extension/pair, pair-code, crop
-│   │   │   ├── auth/[...nextauth], auth/me, auth/adopt
-│   │   │   ├── onboarding, progress, reviews, events, operator
-│   │   │   └── topics/[topicId], topics/[topicId]/quiz, topics/custom
-│   │   ├── page.tsx (landing)
-│   │   └── layout.tsx
-│   ├── components/
-│   │   ├── ui/ (shadcn/ui: Button, Card, Badge, Progress, etc.)
-│   │   ├── coverage-checker.tsx
-│   │   └── quiz-runner.tsx
-│   ├── data/dsa-curriculum.ts (14 topics, 4 phases, 50+ objectives)
-│   ├── lib/
-│   │   ├── auth.ts (NextAuth + Cognito, extension token support)
-│   │   ├── db.ts (DynamoDB operations, 7 tables)
-│   │   ├── bedrock.ts (Bedrock Converse API wrapper)
-│   │   ├── s3.ts (S3 crop upload)
-│   │   ├── auth-utils.ts (extension token resolver)
-│   │   ├── resolver.ts (deterministic spatial resolver)
-│   │   ├── spatial.ts (geometry helpers)
-│   │   ├── coverage.ts (offline coverage classifier)
-│   │   ├── quiz.ts (quiz generator + scorer)
-│   │   ├── utils.ts
-│   │   └── s3.ts
-│   ├── shared/
-│   │   ├── contracts.ts (all wire types, error envelope)
-│   │   ├── today.ts (pure Today algorithm + tests)
-│   │   ├── coverage.ts (offline classifier)
-│   │   ├── quiz.ts (quiz generator + scorer)
-│   │   ├── spatial.ts (geometry helpers)
-│   │   └── resolver.ts (deterministic resolver + tests)
-│   ├── lib/auth-utils.ts (extension token resolver)
-│   ├── types/index.ts, types/next-auth.d.ts
-│   └── data/dsa-curriculum.ts
-├── extension/
-│   ├── manifest.json (MV3)
-│   ├── background.js (service worker, spatial injection, API proxy)
-│   ├── content.js (text selection capture)
-│   ├── spatial-content.js (rectangle overlay, DOM candidates, grounding chip)
-│   ├── geometry.js (client-side resolver + nearestHeading)
-│   ├── config.js (apiBase, features.rectangleOnly, privacy)
-│   ├── background.js, content.js, sidepanel.html, sidepanel.js
-│   ├── popup.html, popup.js (Alt+Shift+A launcher)
-│   └── icons/ (16/32/48/128px)
-├── infra/
-│   ├── template.yaml (SAM: Cognito, 8 DynamoDB tables, Bedrock IAM, S3, CloudWatch)
-│   └── samconfig.toml
-├── scripts/
-│   ├── create-tables.mjs (DynamoDB table provisioning)
-│   ├── e2e-features.mjs (page + API smoke tests)
-│   └── commit-msg-*.txt
-├── .env.example
-├── .env.local (gitignored)
-├── package.json, pnpm-workspace.yaml, tsconfig.json
-└── README.md
+```text
+https://<app-runner-service-url>/api/auth/callback/google
 ```
 
----
+Do **not** configure `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` in App Runner. The instance role provides temporary credentials to the AWS SDK.
 
-## Hackathon Tracks
+## API surface
 
-| Track | Implementation |
-|-------|----------------|
-| **Ship It** | App Runner-hosted Next.js 16 handlers + Bedrock + DynamoDB + S3 + CloudWatch |
-| **Build It** | Next.js locally + DynamoDB Local (Docker) |
-| **Best UI** | Tailwind + shadcn/ui, polished Today screen & spatial extension |
+| Route group | Purpose |
+|---|---|
+| `/api/ask`, `/api/ask/stream` | Contextual Ask with durable replay, quota, streaming, persistence, and model routing |
+| `/api/spatial/ask` | Rectangle/anchor-based Point & Ask resolution |
+| `/api/ask/feedback`, `/api/ask/save-review` | Feedback and spaced-review conversion |
+| `/api/coverage/check` | Coverage Lite analysis |
+| `/api/progress`, `/api/reviews`, `/api/topics/*` | Learning progress, reviews, quiz evidence, and custom topics |
+| `/api/extension/*` | Pairing, token flow, and crop upload |
+| `/api/events`, `/api/operator/overview` | Product events and operator reporting |
 
----
+## Quality checks
 
-## Key Features (P0 - Hackathon Scope)
+```powershell
+pnpm exec tsc --noEmit
+pnpm test
+pnpm lint
+pnpm build
 
-- ✅ **Student auth** (Google OAuth + Cognito, extension pairing via 6-char code)
-- ✅ **Year-based onboarding** → DSA Foundations (14 topics, 4 phases, 50+ objectives)
-- ✅ **Today screen** with prerequisite-aware next action (review → in-progress → next prereq-ready)
-- ✅ **14-topic DSA curriculum** with curated resources (watch/read/practice per topic)
-- ✅ Topic pages with objectives, resources, learning evidence, progress tracking
-- ✅ **Chrome Extension MV3** (side panel, text selection, Alt+Shift+A hotkey)
-- ✅ **Spatial Point & Ask** — rectangle / circle / freehand marking over any page, grounded on the circled text
-- ✅ **Point & Ask → Bedrock grounded answer** (grounding excerpts, insufficient-context detection)
-- ✅ **Helpful/Not Helpful** feedback
-- ✅ **Save to Review → Spaced repetition (Again/Good)**
-- ✅ **Review queue** with Again/Good scheduling
-- ✅ **Resource Coverage Lite** — paste any resource and see Strong/Moderate/Weak/Missing per objective
-- ✅ **Per-topic Quiz** ("check your understanding") with evidence recording
-- ✅ **Custom Topics** — students add their own learning goals to the roadmap
-- ✅ **Anonymous device adoption** — use it without an account, sign in to keep history
-- ✅ Event tracking (signup, ask, feedback, review, spatial metrics)
-- ✅ Operator dashboard (metrics, funnel, domains, errors, spatial vs text-selection split)
-- ✅ Extension pairing via 6-char code (10-min expiry, single-use)
-- ✅ SAM stack (`infra/template.yaml`): Cognito, 8 DynamoDB tables, Bedrock IAM, CloudWatch, **S3 for Point & Ask crops**
-
----
-
-## Spatial Point & Ask — Technical Deep Dive
-
-### Rectangle Interaction (Phase 2)
-- **Alt+Shift+A** → crosshair cursor → drag rectangle → release → candidate discovery
-- Rectangle is the **only enabled tool** for hackathon (circle/pen hidden behind feature flag)
-
-### DOM Candidate Discovery (Phase 3)
-- `elementsFromPoint()` grid sampling (6×6) under the rectangle
-- `anchorFilter` rejects oversized containers (`body`, `main`, huge `div`s)
-- Extracts: `textContent`, `tagName`, `bbox`, `aria-label`, `title`, `alt`, `href`, `src`
-- `nearestHeading()` walks up ancestors for nearest `h1–h6` → candidate `label`
-
-### Deterministic Geometry Resolver (Phase 4)
-```
-score = overlap + containmentBonus - centerDistancePenalty - oversizedContainerPenalty
-```
-- **overlap** = intersection / markArea
-- **containmentBonus** = +0.2 if candidate fully inside mark
-- **centerDistancePenalty** = min(0.5, centerDistance / markDiagonal)
-- **oversizedContainerPenalty** = 0.5 if candidateArea > 6×markArea AND >40k px²
-
-**Confidence classification:**
-- `high`: topScore ≥ 0.7 AND gap ≥ 0.3
-- `medium`: gap ≥ 0.12
-- `low` (ambiguous): near-tie
-
-### Visible Grounding (Phase 5)
-- **Grounding chip** above ask input: `🎯 Binary Search · High confidence`
-- Click chip → **pulse highlight** the resolved DOM element
-- **Ambiguity chooser** (low confidence): "Did you mean: [1] Code block [2] Paragraph"
-- **Privacy indicator**: `✓ Resolved DOM object · ✓ Nearby text · ✕ Full page · ✕ Full screenshot`
-
-### Server-Side Resolution (Phase 7)
-```
-/api/spatial/ask pipeline:
-1. Anchors → CandidateObject[] (source: 'dom' | 'pdf_text')
-2. Deterministic resolver → ResolvedTarget {candidateId, confidence, alternatives[]}
-3. SpatialContext {mark, target, alternatives, page} → Bedrock prompt
-4. Answer → persist Ask + trackEvent(point_ask_succeeded)
-5. Response: {answer, anchors_used, confidence (0.9/0.7/0.4), resolved_target, nearby_context}
+# Requires DynamoDB Local on port 8001 and a running app on port 3000
+node scripts/e2e-features.mjs
 ```
 
----
-
-## Key Features (Complete List)
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Student Auth (Google OAuth + Cognito) | ✅ | Extension pairing via 6-char code |
-| Year-based Onboarding → DSA Foundations | ✅ | 14 topics, 4 phases, 50+ objectives |
-| Today Screen (prerequisite-aware) | ✅ | Review → In-progress → Next prereq-ready |
-| 14-Topic DSA Curriculum | ✅ | 4 phases, curated resources per topic |
-| Topic Pages (objectives, resources, evidence) | ✅ | Progress tracking + evidence state |
-| Chrome Extension MV3 | ✅ | Side panel, Alt+Shift+A, context menu |
-| **Spatial Point & Ask** | ✅ | Rectangle overlay, DOM candidates, deterministic resolver |
-| Grounded Bedrock Answers | ✅ | Citations to circled text, insufficient-context detection |
-| Helpful/Not Helpful Feedback | ✅ | Persisted to DynamoDB |
-| Save to Review → Spaced Repetition | ✅ | Again (+1d) / Good (+3d) scheduling |
-| Review Queue | ✅ | Due today + upcoming, Again/Good actions |
-| Resource Coverage Lite | ✅ | Paste resource → Strong/Moderate/Weak/Missing per objective |
-| Per-Topic Quiz | ✅ | 1 Q/objective, score → evidence recording |
-| Custom Topics | ✅ | User-created topics on personal roadmap |
-| Anonymous Device Adoption | ✅ | X-Device-ID → history adopted on login |
-| Event Tracking | ✅ | signup, onboarding, topic, ask, feedback, review, spatial |
-| Operator Dashboard | ✅ | Metrics, funnel, domains, errors, spatial vs text split |
-| Extension Pairing | ✅ | 6-char code, 10-min TTL, single-use |
-| SAM Stack | ✅ | Cognito, 8 DynamoDB tables, Bedrock IAM, S3, CloudWatch |
-| S3 Crop Storage | ✅ | Private bucket, 7-day lifecycle, CORS for extension |
-| Coverage Lite | ✅ | Paste resource → per-objective Strong/Moderate/Weak/Missing |
-| Per-Topic Quiz | ✅ | Generated from objectives, evidence recorded |
-| Custom Topics | ✅ | Student-created topics on personal roadmap |
-
----
-
-## Not Built (Post-Hack)
-
-- ❌ **PDF viewer inside extension** (extension is web-only; overlay reads PDF text anchors when a viewer is present)
-- ❌ Multiple curriculum tracks
-- ❌ Full mastery model (0–100)
-- ❌ Semantic ingestion pipeline (DocCluster)
-- ❌ Step Functions / EventBridge / OpenSearch / Cedar
-- ❌ Research mode web-search grounding (replaced by Bedrock-grounded answers on circled text)
-- ❌ Multi-track curriculum
-- ❌ Full mastery model (0–100)
-- ❌ Semantic ingestion pipeline (DocCluster)
-- ❌ Step Functions / EventBridge / OpenSearch
-- ❌ Research mode web-search grounding (replaced by Bedrock-grounded answers on circled text)
-
----
-
-## Verification & Quality
+Latest local verification:
 
 | Check | Result |
-|-------|--------|
-| TypeScript (`pnpm exec tsc --noEmit`) | ✅ Clean |
-| Unit Tests (`pnpm test`) | 31/31 pass |
-| Production Build (`pnpm build`) | Run before submission; validates the App Router production bundle |
-| E2E (local DynamoDB) | `node scripts/e2e-features.mjs` after DynamoDB Local is running |
-| AWS deployment proof | Not committed: run `sam deploy` and an App Runner deploy with your AWS role, then capture the deployed URL and a Bedrock-backed request for the submission |
+|---|---|
+| TypeScript | Pass |
+| Shared unit tests | 31/31 pass |
+| Production build | Pass; includes `/api/ask/stream` |
+| Local E2E | Pass; page/API auth checks, idempotency replay, daily quota, custom topics, reviews, adoption, quiz, and coverage |
+| ESLint | Exit code 0; legacy warning cleanup remains |
 
----
+## Scaling plan toward 10K MAU
 
-## Hackathon Tracks
+The application should keep AI endpoints in Next.js route handlers on App Runner initially. Moving them to Lambda/API Gateway is not a near-term scaling requirement.
 
-| Track | Implementation |
-|-------|----------------|
-| **Ship It** | App Runner-hosted Next.js 16 handlers + Bedrock + DynamoDB + S3 + CloudWatch |
-| **Build It** | Next.js locally + DynamoDB Local (Docker) |
-| **Best UI** | Tailwind + shadcn/ui, polished Today screen & spatial extension |
+1. Replace operator analytics scans with access-pattern-specific DynamoDB GSIs and `Query` operations.
+2. Pre-aggregate analytics asynchronously from events (DynamoDB Streams first; SQS/EventBridge only when independent buffering or fan-out is needed).
+3. Add Bedrock bounded retries, timeouts, a circuit breaker, alarms, and quota monitoring before launch.
+4. Cache stable curriculum, coverage, and quiz work selectively; do not expect high cache hits for unique Ask requests.
+5. Load test realistic streaming traffic, starting at 100 concurrent clients and progressing to 500. Tune App Runner maximum concurrency and instance limits from observed P95 latency and Bedrock quota behaviour.
 
----
+Do not add Kinesis, ClickHouse, OpenSearch, AppSync, multi-region deployment, or a Lambda migration until measurements show a concrete need.
 
-## Team
+## Project layout
 
-**Arnav Khandelwal** - Solo founder, 2nd year engineering student  
-Built during AWS First Commit Hackathon (Sept 17-20, 2026)
+```text
+src/app/api/             Next.js route handlers
+src/app/dashboard/       Student learning experience
+src/components/          UI and learning widgets
+src/data/                DSA curriculum
+src/lib/                 Bedrock, DynamoDB, auth, S3, and Ask safety modules
+src/shared/              Contracts and testable algorithms
+extension/               Chrome MV3 extension
+infra/template.yaml      SAM infrastructure stack
+apprunner.yaml           App Runner source-deployment configuration
+scripts/                 DynamoDB Local setup and E2E verification
+```
 
----
+## Hackathon tracks
+
+| Track | Evidence |
+|---|---|
+| Ship It | App Runner-ready Next.js 16 app, SAM AWS stack, Bedrock, DynamoDB, S3, and CloudWatch |
+| Build It | Local Next.js + DynamoDB Local setup and E2E script |
+| Best UI | Responsive learning dashboard and spatial Chrome extension workflow |
 
 ## License
 
-MIT - Built for AWS First Commit Hackathon
+MIT
