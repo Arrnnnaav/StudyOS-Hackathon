@@ -159,6 +159,22 @@ Resources:
         AttributeName: expiresAt
         Enabled: true
 
+  # Organizations, one-active-membership pointers, invitation links, rotating
+  # join codes, and organization-published topics.
+  OrganizationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
   # ---------------- One honest extra AWS service: S3 for Point & Ask crops ----------------
   CropBucket:
     Type: AWS::S3::Bucket
@@ -205,6 +221,7 @@ Resources:
               - !GetAtt ExtensionTokensTable.Arn
               - !GetAtt PairingCodesTable.Arn
               - !GetAtt AskSafetyTable.Arn
+              - !GetAtt OrganizationsTable.Arn
 
   # Kept for teams that deliberately choose an Amplify-supported Next.js version.
   # It gives SSR handlers short-lived credentials rather than static access keys.
@@ -259,4 +276,4 @@ Outputs:
   BedrockModelId: { Value: !Ref BedrockModelId }
   CropBucketName: { Value: !Ref CropBucket }
   Tables:
-    Value: !Join [",", ["StudyOSUsers", "StudyOSProgress", "StudyOSAsks", "StudyOSReviews", "StudyOSEvents", "StudyOSExtensionTokens", "StudyOSPairingCodes", "StudyOSAskSafety"]]
+    Value: !Join [",", ["StudyOSUsers", "StudyOSProgress", "StudyOSAsks", "StudyOSReviews", "StudyOSEvents", "StudyOSExtensionTokens", "StudyOSPairingCodes", "StudyOSAskSafety", "StudyOSOrganizations"]]

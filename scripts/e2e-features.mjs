@@ -7,7 +7,7 @@ process.env.AWS_REGION = 'us-east-1'
 process.env.AWS_ACCESS_KEY_ID = 'dummy'
 process.env.AWS_SECRET_ACCESS_KEY = 'dummy'
 
-const BASE = 'http://localhost:3000'
+const BASE = process.env.STUDYOS_E2E_BASE || 'http://localhost:3000'
 let failures = 0
 function check(name, cond, detail = '') {
   console.log((cond ? 'PASS' : 'FAIL') + '  ' + name + (detail ? ' — ' + detail : ''))
@@ -18,7 +18,8 @@ function check(name, cond, detail = '') {
 const pages = [
   '/', '/auth/signin', '/auth/onboarding', '/dashboard/today', '/dashboard/roadmap',
   '/dashboard/review', '/dashboard/topics', '/dashboard/topics/binary-search',
-  '/dashboard/progress', '/dashboard/settings', '/dashboard/custom-topics',
+  '/dashboard/progress', '/dashboard/settings', '/dashboard/custom-topics', '/dashboard/organization',
+  '/admin/master', '/admin/organization',
 ]
 for (const p of pages) {
   try {
@@ -41,12 +42,25 @@ check('/api/topics/custom GET no-auth → 401', (await gate('/api/topics/custom'
 check('/api/topics/custom POST no-auth → 401', (await gate('/api/topics/custom', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'x', objectives: ['a'] }) })) === 401)
 check('/api/topics/binary-search/quiz GET no-auth → 401', (await gate('/api/topics/binary-search/quiz')) === 401)
 check('/api/auth/adopt no-auth → 401', (await gate('/api/auth/adopt', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ device_id: 'dev-x' }) })) === 401)
+check('/api/organization no-auth → 401', (await gate('/api/organization')) === 401)
+check('/api/admin/organizations no-auth → 401', (await gate('/api/admin/organizations')) === 401)
 
 // --- 3) Direct module-level verification of the new logic against local DB ---
 const { createUser, createCustomTopic, getCustomTopics, deleteCustomTopic, createReview, getDueReviews, getUserReviews, updateReviewRating, recordDeviceUser, getDeviceUser } = await import('../src/lib/db.ts')
 const { generateQuiz, scoreAttempt } = await import('../src/shared/quiz.ts')
 const { classifyCoverage } = await import('../src/shared/coverage.ts')
 const { reserveAsk, completeAskReservation, takeDailyAskQuota } = await import('../src/lib/ask-safety.ts')
+const {
+  acceptOrganizationInvite,
+  createJoinCode,
+  createOrganization,
+  createOrganizationInvite,
+  createOrganizationTopic,
+  getOrganizationMembership,
+  getOrganizationTopics,
+  joinOrganizationByCode,
+  listOrganizationMembers,
+} = await import('../src/lib/organization-db.ts')
 
 const uid = 'user-feature-' + Date.now()
 await createUser({ id: uid, email: 'feature@test.com', name: 'F', image: null, year: 2, activeTrack: 'dsa-foundations' })
@@ -62,6 +76,24 @@ check('duplicate request replays cached answer', replayReservation.state === 'ca
 const quotaFirst = await takeDailyAskQuota(`quota-${uid}`, 1)
 const quotaSecond = await takeDailyAskQuota(`quota-${uid}`, 1)
 check('daily Ask quota rejects over-limit request', quotaFirst.allowed && !quotaSecond.allowed)
+
+// Organization: invite and join-code onboarding must create one scoped
+// membership, while published assigned topics are visible to the cohort.
+const orgId = `org-${Date.now()}`
+const studentId = `student-${Date.now()}`
+const joinerId = `joiner-${Date.now()}`
+await createOrganization({ id: orgId, name: 'Feature Academy', createdBy: uid })
+const adminInvite = await createOrganizationInvite({ organizationId: orgId, role: 'organization_admin', createdBy: uid })
+await acceptOrganizationInvite(adminInvite.token, uid)
+const studentInvite = await createOrganizationInvite({ organizationId: orgId, role: 'student', createdBy: uid })
+await acceptOrganizationInvite(studentInvite.token, studentId)
+check('organization invite creates a student membership', (await getOrganizationMembership(studentId))?.organizationId === orgId)
+const joinCode = await createJoinCode(orgId, uid)
+await joinOrganizationByCode(joinCode.code, joinerId)
+check('rotating join code admits a student', (await getOrganizationMembership(joinerId))?.role === 'student')
+check('organization members are scoped to their cohort', (await listOrganizationMembers(orgId)).length === 3)
+await createOrganizationTopic({ id: 'linked-lists', organizationId: orgId, title: 'Linked Lists', description: 'Pointers and nodes', objectives: ['Traverse a list'], estimatedMinutes: 40, resources: [], deliveryMode: 'assigned', createdBy: uid, status: 'published' })
+check('published organization topic is available to members', (await getOrganizationTopics(orgId, 'published')).some(topic => topic.id === 'linked-lists' && topic.deliveryMode === 'assigned'))
 
 // custom topics round-trip
 await createCustomTopic({ id: 'ct1', userId: uid, title: 'My Topic', description: 'd', why: 'w', objectives: ['a', 'b'], estimatedMinutes: 30 })

@@ -22,6 +22,7 @@ const tables = {
   StudyOSExtensionTokens: { GSI: false },
   StudyOSPairingCodes: { GSI: false },
   StudyOSAskSafety: { GSI: false },
+  StudyOSOrganizations: { GSI: false },
 }
 
 // All StudyOS tables use PK (partition) + SK (sort), string keys.

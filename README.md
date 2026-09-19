@@ -12,6 +12,7 @@ StudyOS is a learning workflow for engineering students: choose a track, get a p
 - Grounded Bedrock answers, helpful/not-helpful feedback, saved review cards, and Again/Good spaced-repetition scheduling.
 - Resource Coverage Lite, event tracking, and an operator overview.
 - A safe Ask pipeline: idempotency, daily per-user quota, streaming, short conversation context, and model routing.
+- A three-level organization hierarchy: bootstrapped Master Admins, scoped Organization Admins, and Students. Admins can invite/manage one cohort, publish structured topics, and see only organization-assignment progress.
 
 ## Demo flow
 
@@ -49,14 +50,34 @@ The real production API is the Next.js route-handler layer. There is no API Gate
 | Service | Role in StudyOS |
 |---|---|
 | App Runner | Hosts the Next.js 16 app and route handlers |
-| DynamoDB | Users, progress, asks, reviews, events, extension pairing, and Ask safety state |
+| DynamoDB | Users, progress, asks, reviews, events, extension pairing, Ask safety state, and organization membership/content |
 | Bedrock | Claude 3.5 Haiku for Ask; Claude Sonnet 4.5 for Coverage Lite |
 | S3 | Private Point & Ask crop storage with a seven-day lifecycle |
 | CloudWatch | Application and deployment observability |
 | IAM | Temporary credentials for the running App Runner service |
 | Cognito | User pool provisioned by the stack for AWS-native identity evolution; the current web sign-in flow is Google OAuth through NextAuth |
 
-`infra/template.yaml` provisions eight DynamoDB tables. `AppRunnerInstanceRoleArn` is attached to the App Runner service, so the application receives temporary AWS credentials; never place AWS access keys in App Runner environment variables.
+`infra/template.yaml` provisions nine DynamoDB tables, including `StudyOSOrganizations`. `AppRunnerInstanceRoleArn` is attached to the App Runner service, so the application receives temporary AWS credentials; never place AWS access keys in App Runner environment variables.
+
+## Organization administration
+
+Roles are intentionally small and explicit:
+
+| Role | Scope |
+|---|---|
+| Master Admin | Exact email allowlist in `MASTER_ADMIN_EMAILS`; creates organizations, appoints organization admins, can inspect all organization-only cohort progress, and can unpublish content. |
+| Organization Admin | One organization; creates copyable student invites or rotating join codes, removes students, publishes topics, and sees only assigned-topic completion/active counts. |
+| Student | At most one active organization; accepts one invite or join code, sees published library topics, and receives the next published assigned topic in **Today**. |
+
+Organizations use signed single-use invite tokens (seven-day expiry) or rotating join codes; no outbound email service is required. Removing a student removes organization access but leaves that student’s personal learning history intact. Structured topics include description, objectives, estimated time, optional watch/read/practice resources, and a `library` or `assigned` delivery mode. Privileged organization actions are recorded as product audit events.
+
+Set the master allowlist before deploying:
+
+```text
+MASTER_ADMIN_EMAILS=owner@example.com,another-owner@example.com
+```
+
+Do not use a company domain as an authorization rule. The future/enterprise ideas intentionally deferred from this hackathon scope are in [`docs/roadmaps/admin-hierarchy-future.md`](docs/roadmaps/admin-hierarchy-future.md).
 
 ## Ask reliability and cost controls
 
@@ -134,6 +155,7 @@ BEDROCK_ASK_MODEL_ID=anthropic.claude-3-5-haiku-20241022-v1:0
 BEDROCK_COVERAGE_MODEL_ID=global.anthropic.claude-sonnet-4-5-20250929-v1:0
 ASK_DAILY_LIMIT=20
 ASK_IDEMPOTENCY_TTL_SECONDS=86400
+MASTER_ADMIN_EMAILS=<comma-separated exact admin emails>
 ```
 
 Add this Google OAuth redirect URI after the App Runner URL exists:
@@ -155,6 +177,7 @@ Do **not** configure `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` in App Runne
 | `/api/progress`, `/api/reviews`, `/api/topics/*` | Learning progress, reviews, quiz evidence, and custom topics |
 | `/api/extension/*` | Pairing, token flow, and crop upload |
 | `/api/events`, `/api/operator/overview` | Product events and operator reporting |
+| `/api/organization`, `/api/admin/organizations/*` | Organization join context, master/org-admin management, invites, join codes, publishing, and scoped cohort progress |
 
 ## Quality checks
 
@@ -173,9 +196,9 @@ Latest local verification:
 | Check | Result |
 |---|---|
 | TypeScript | Pass |
-| Shared unit tests | 31/31 pass |
+| Shared unit tests | 37/37 pass |
 | Production build | Pass; includes `/api/ask/stream` |
-| Local E2E | Pass; page/API auth checks, idempotency replay, daily quota, custom topics, reviews, adoption, quiz, and coverage |
+| Local E2E | Pass; page/API auth checks, idempotency replay, daily quota, organization invite/join/publish flow, custom topics, reviews, adoption, quiz, and coverage |
 | ESLint | Exit code 0; legacy warning cleanup remains |
 
 ## Scaling plan toward 10K MAU

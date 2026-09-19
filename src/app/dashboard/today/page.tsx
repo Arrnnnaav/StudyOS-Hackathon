@@ -10,11 +10,12 @@ import { Card, CardContent } from '@/components/ui/card'
 import type { Curriculum, Topic } from '@/data/dsa-curriculum'
 import type { TopicProgress } from '@/shared/contracts'
 import type { TodayPick } from '@/shared/today'
+import type { OrganizationTopic } from '@/lib/organization-db'
 
 type ProgressTopic = Topic & { progress: Pick<TopicProgress, 'status' | 'timeSpentMin'> }
 type ProgressResponse = {
   curriculum: Omit<Curriculum, 'phases'> & { phases: Array<{ topics: ProgressTopic[] }> }
-  today: TodayPick
+  today: TodayPick | { kind: 'organization_topic'; topic: OrganizationTopic; continued: boolean; whyNow: string }
   stats: { done: number; total: number }
 }
 
@@ -45,6 +46,8 @@ export default function TodayPage() {
 
   if (pick.kind === 'done') return <CompletionState done={data.stats.done} total={data.stats.total} />
   if (pick.kind === 'review') return <ReviewState count={pick.reviewsDue} reason={pick.whyNow} />
+
+  if (pick.kind === 'organization_topic') return <OrganizationAssignmentState topic={pick.topic} continued={pick.continued} reason={pick.whyNow} />
 
   const topic = pick.topic
   return (
@@ -88,6 +91,16 @@ export default function TodayPage() {
       </div>
     </div>
   )
+}
+
+function OrganizationAssignmentState({ topic, continued, reason }: { topic: OrganizationTopic; continued: boolean; reason: string }) {
+  const [saving, setSaving] = useState(false)
+  const start = async () => {
+    setSaving(true)
+    await fetch('/api/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topicId: topic.id, action: 'start' }) })
+    window.location.reload()
+  }
+  return <div className="mx-auto max-w-4xl py-8"><Card className="overflow-hidden border-violet-200 bg-gradient-to-br from-violet-50 via-white to-indigo-50 dark:border-violet-900/70 dark:from-violet-950/40 dark:via-neutral-900"><CardContent className="p-6 sm:p-8"><div className="mb-4 flex justify-between gap-3"><Badge className="bg-violet-700 hover:bg-violet-700">ORGANIZATION ASSIGNMENT</Badge><Badge variant="outline">~{topic.estimatedMinutes} min</Badge></div><h2 className="text-3xl font-bold">{topic.title}</h2><p className="mt-3 max-w-2xl text-slate-600 dark:text-neutral-300">{topic.description}</p><p className="mt-4 border-l-2 border-violet-400 pl-3 text-sm text-violet-900 dark:text-violet-100"><strong>Why now:</strong> {reason}</p><div className="mt-6 flex flex-wrap gap-2">{topic.objectives.map((objective) => <Badge key={objective} variant="secondary">{objective}</Badge>)}</div><Button className="mt-7 bg-violet-700 hover:bg-violet-800" onClick={() => void start()} disabled={saving}>{saving ? 'Starting…' : continued ? 'Continue assigned topic' : 'Start assigned topic'}<ArrowRight /></Button></CardContent></Card></div>
 }
 
 function Metric({ icon: Icon, label, value, tone }: { icon: typeof BookOpen; label: string; value: string; tone: string }) {

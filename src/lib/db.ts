@@ -27,6 +27,7 @@ export const TABLES = {
   EXTENSION_TOKENS: 'StudyOSExtensionTokens',
   PAIRING_CODES: 'StudyOSPairingCodes',
   ASK_SAFETY: 'StudyOSAskSafety',
+  ORGANIZATIONS: 'StudyOSOrganizations',
 } as const
 
 // User operations
