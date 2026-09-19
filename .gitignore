@@ -59,3 +59,9 @@ extension/dist/
 
 # Agent worktrees
 .worktrees/
+
+# Local agent planning and browser-test artifacts
+/docs/superpowers/
+/docs/roadmaps/
+/.playwright-cli/
+/output/
