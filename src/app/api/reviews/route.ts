@@ -1,5 +1,5 @@
 import { auth } from '@/lib/auth'
-import { getDueReviews, updateReviewRating, trackEvent, recordReviewCompleted } from '@/lib/db'
+import { getReviewById, getUserReviews, updateReviewRating, trackEvent, recordReviewCompleted } from '@/lib/db'
 import { NextResponse } from 'next/server'
 
 export async function GET() {
@@ -10,10 +10,9 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const now = new Date().toISOString()
-    const reviews = await getDueReviews(session.user.id, now)
+    const reviews = await getUserReviews(session.user.id)
 
-    return NextResponse.json({ reviews })
+    return NextResponse.json({ reviews, now: new Date().toISOString() })
 
   } catch (error) {
     console.error('Get reviews error:', error)
@@ -39,11 +38,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Rating must be "again" or "good"' }, { status: 400 })
     }
 
-    // Get review to find topicId for progress tracking
-    // For hackathon, we'll assume the review has topicId in a known format
-    // In production, we'd query the review first
-    
-    await updateReviewRating(reviewId, session.user.id, rating)
+    const review = await getReviewById(session.user.id, reviewId)
+    if (!review) {
+      return NextResponse.json({ error: 'Review not found' }, { status: 404 })
+    }
+
+    const updated = await updateReviewRating(reviewId, session.user.id, rating)
 
     // Track event
     await trackEvent({
@@ -57,10 +57,11 @@ export async function POST(request: Request) {
       properties: { reviewId, rating }
     })
 
-    // Record in progress (would need topicId from review)
-    // await recordReviewCompleted(session.user.id, topicId)
+    if (review.topicId) {
+      await recordReviewCompleted(session.user.id, review.topicId)
+    }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, review: updated })
 
   } catch (error) {
     console.error('Rate review error:', error)

@@ -74,7 +74,7 @@ export default function LandingPage() {
                 <BookOpen className="h-10 w-10 text-emerald-600 dark:text-emerald-400 mb-2" />
                 <CardTitle>Questions return later as reviews</CardTitle>
                 <CardDescription>
-                  Mark answers "Helpful" → Save to Review → Spaced repetition brings it back. Questions become learning evidence.
+                  Mark answers &quot;Helpful&quot; → Save to Review → Spaced repetition brings it back. Questions become learning evidence.
                 </CardDescription>
               </CardHeader>
             </Card>

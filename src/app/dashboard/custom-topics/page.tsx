@@ -38,7 +38,10 @@ export default function CustomTopicsPage() {
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/auth/signin')
-    if (status === 'authenticated') load()
+    if (status === 'authenticated') {
+      const timer = window.setTimeout(() => { void load() }, 0)
+      return () => window.clearTimeout(timer)
+    }
   }, [status, router, load])
 
   if (status === 'loading') return <div className="flex h-64 items-center justify-center">Loading...</div>

@@ -1,7 +1,20 @@
 import { auth } from '@/lib/auth'
-import { getUserProgress, startTopic, completeTopic } from '@/lib/db'
+import { getDueReviews, getUserProgress, startTopic, completeTopic } from '@/lib/db'
 import { dsaFoundations } from '@/data/dsa-curriculum'
 import { NextResponse } from 'next/server'
+import { progressStats, todayPick, toStatusMap } from '@/shared/today'
+import type { TopicProgress } from '@/shared/contracts'
+
+const emptyProgress = (): Omit<TopicProgress, 'userId' | 'topicId' | 'updatedAt'> => ({
+  status: 'not_started',
+  startedAt: null,
+  completedAt: null,
+  timeSpentMin: 0,
+  resourceCompleted: false,
+  questionsAsked: 0,
+  helpfulAnswers: 0,
+  reviewsCompleted: 0,
+})
 
 export async function GET() {
   const session = await auth()
@@ -20,72 +33,24 @@ export async function GET() {
       const p = progress.find(item => item.topicId === topic.id)
       return {
         ...topic,
-        progress: p || {
-          status: 'not_started',
-          startedAt: null,
-          completedAt: null,
-          timeSpentMin: 0,
-          resourceCompleted: false,
-          questionsAsked: 0,
-          helpfulAnswers: 0,
-          reviewsCompleted: 0
-        }
+        progress: p || emptyProgress()
       }
     })
   }))
 
-  // Compute today's action
-  const today = computeToday(phasesWithProgress)
+  const topics = curriculum.phases.flatMap((phase) => phase.topics)
+  const statusMap = toStatusMap(progress)
+  const dueReviews = await getDueReviews(session.user.id, new Date().toISOString())
+  const today = todayPick(topics, statusMap, dueReviews.length, dueReviews[0]?.topicId)
 
   return NextResponse.json({
     curriculum: {
       ...curriculum,
       phases: phasesWithProgress
     },
-    today
+    today,
+    stats: progressStats(topics, statusMap),
   })
-}
-
-function computeToday(phases: any[]) {
-  // Find first review due (would need reviews table)
-  // For now, find first incomplete topic with prerequisites met
-  
-  const completedTopics = new Set()
-  const inProgressTopic = phases.flatMap(p => p.topics).find(t => t.progress.status === 'in_progress')
-  
-  phases.forEach(p => {
-    p.topics.forEach((t: any) => {
-      if (t.progress.status === 'done') completedTopics.add(t.id)
-    })
-  })
-
-  if (inProgressTopic) {
-    return {
-      type: 'continue',
-      topic: inProgressTopic,
-      reason: 'Continue where you left off'
-    }
-  }
-
-  for (const phase of phases) {
-    for (const topic of phase.topics) {
-      if (topic.progress.status !== 'done') {
-        const prereqsMet = topic.prerequisites.every((p: string) => completedTopics.has(p))
-        if (prereqsMet) {
-          return {
-            type: 'next',
-            topic,
-            reason: `Prerequisites met. This is the next topic in your roadmap.`
-          }
-        }
-      }
-    }
-  }
-
-  return {
-    type: 'complete',
-    reason: 'All topics completed! 🎉'
-  }
 }
 
 export async function POST(request: Request) {
@@ -95,10 +60,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { topicId, action } = await request.json()
+  const { topicId, action } = await request.json() as { topicId?: string; action?: string }
   
   if (!topicId || !action) {
     return NextResponse.json({ error: 'topicId and action required' }, { status: 400 })
+  }
+
+  const knownTopic = dsaFoundations.phases.flatMap((phase) => phase.topics).some((topic) => topic.id === topicId)
+  if (!knownTopic) {
+    return NextResponse.json({ error: 'Topic not found' }, { status: 404 })
   }
 
   if (action === 'start') {

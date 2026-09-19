@@ -1,164 +1,107 @@
 'use client'
 
-import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { ArrowRight, Clock, BookOpen, RotateCcw, CheckCircle, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
+import { ArrowRight, BookOpen, CheckCircle2, Clock3, Flame, Layers3, RotateCcw } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import type { Curriculum, Topic } from '@/data/dsa-curriculum'
+import type { TopicProgress } from '@/shared/contracts'
+import type { TodayPick } from '@/shared/today'
 
-interface TodayAction {
-  type: 'next' | 'continue' | 'review' | 'complete'
-  topic?: any
-  reason?: string
+type ProgressTopic = Topic & { progress: Pick<TopicProgress, 'status' | 'timeSpentMin'> }
+type ProgressResponse = {
+  curriculum: Omit<Curriculum, 'phases'> & { phases: Array<{ topics: ProgressTopic[] }> }
+  today: TodayPick
+  stats: { done: number; total: number }
 }
 
 export default function TodayPage() {
-  const { data: session, status } = useSession()
-  const router = useRouter()
+  const { status } = useSession()
+  const [data, setData] = useState<ProgressResponse | null>(null)
+  const [error, setError] = useState(false)
 
-  if (status === 'loading') {
-    return <div className="flex h-64 items-center justify-center">Loading...</div>
-  }
+  useEffect(() => {
+    let active = true
+    if (status !== 'authenticated') return () => { active = false }
+    fetch('/api/progress')
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error('Could not load progress')))
+      .then((payload: ProgressResponse) => { if (active) setData(payload) })
+      .catch(() => { if (active) setError(true) })
+    return () => { active = false }
+  }, [status])
 
-  if (status === 'unauthenticated') {
-    router.push('/auth/signin')
-    return null
-  }
+  if (status === 'loading' || (status === 'authenticated' && !data && !error)) return <TodaySkeleton />
+  if (status === 'unauthenticated') return null
+  if (error || !data) return <div className="mx-auto max-w-2xl py-16 text-center text-sm text-slate-500">We couldn&apos;t load today&apos;s plan. Refresh to try again.</div>
 
-  // This would come from server component in production
-  // For now, we'll show a placeholder
+  const topics = data.curriculum.phases.flatMap((phase) => phase.topics)
+  const inProgress = topics.filter((topic) => topic.progress.status === 'in_progress').length
+  const remaining = data.stats.total - data.stats.done - inProgress
+  const percent = data.stats.total ? Math.round((data.stats.done / data.stats.total) * 100) : 0
+  const pick = data.today
+
+  if (pick.kind === 'done') return <CompletionState done={data.stats.done} total={data.stats.total} />
+  if (pick.kind === 'review') return <ReviewState count={pick.reviewsDue} reason={pick.whyNow} />
+
+  const topic = pick.topic
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+    <div className="mx-auto max-w-5xl space-y-6 pb-10">
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <h1 className="text-3xl font-bold text-neutral-950 dark:text-neutral-50">
-            Today
-          </h1>
-          <p className="text-neutral-600 dark:text-neutral-400">
-            DSA Foundations • Day 1 of 98 • <span className="font-semibold text-emerald-600">🔥 0-day streak</span>
-          </p>
+          <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><Flame className="h-4 w-4 fill-current" /> Your focused plan</p>
+          <h2 className="text-3xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-4xl">One clear next step.</h2>
+          <p className="mt-2 text-slate-500 dark:text-neutral-400">{data.curriculum.name} · Progress is saved as you learn.</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-sm font-medium">
-            <RotateCcw className="h-4 w-4" />
-            <span>0 / 14 topics</span>
+        <div className="min-w-52 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-neutral-800 dark:bg-neutral-900">
+          <div className="mb-2 flex justify-between text-xs font-medium text-slate-500 dark:text-neutral-400"><span>Track progress</span><span>{percent}%</span></div>
+          <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-neutral-800"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${percent}%` }} /></div>
+        </div>
+      </header>
+
+      <Card className="overflow-hidden border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-sm dark:border-emerald-900/70 dark:from-emerald-950/50 dark:via-neutral-900 dark:to-teal-950/30">
+        <CardContent className="p-5 sm:p-8">
+          <div className="mb-6 flex items-center justify-between gap-3"><Badge className="rounded-full bg-emerald-700 px-3 py-1 text-white hover:bg-emerald-700">{pick.continued ? 'CONTINUE' : 'TODAY'}</Badge><span className="text-xs font-medium uppercase tracking-[0.16em] text-emerald-800/70 dark:text-emerald-200/70">{pick.continued ? 'Keep momentum' : 'Prerequisite-ready'}</span></div>
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+            <div className="max-w-2xl">
+              <div className="mb-3 flex flex-wrap items-center gap-2"><Badge variant="outline" className="border-emerald-200 bg-white/70 dark:bg-neutral-900/50"><Clock3 className="mr-1 h-3.5 w-3.5" /> {topic.estimatedMinutes} min</Badge><Badge variant="outline">Difficulty {topic.difficulty}/5</Badge></div>
+              <h3 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-3xl">{topic.title}</h3>
+              <p className="mt-2 text-slate-600 dark:text-neutral-300">{topic.description}</p>
+              <p className="mt-4 border-l-2 border-emerald-400 pl-3 text-sm text-emerald-900 dark:text-emerald-100"><span className="mr-1 font-semibold">Why now:</span>{pick.whyNow}</p>
+            </div>
+            <Button size="lg" className="shrink-0 rounded-xl bg-emerald-700 px-5 shadow-lg shadow-emerald-700/20 hover:bg-emerald-800" asChild><Link href={`/dashboard/topics/${topic.id}`}>{pick.continued ? 'Continue topic' : 'Start topic'}<ArrowRight /></Link></Button>
           </div>
-          <Progress value={0} className="w-48 h-2" />
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      {/* Today's Actions */}
-      <div className="space-y-4 mb-8">
-        <Card className="border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <span className="text-lg">🎯</span>
-              <CardTitle className="text-emerald-900 dark:text-emerald-100">TODAY</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-start gap-4 p-4 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-700">
-              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                <span className="text-lg">1</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-semibold text-neutral-900 dark:text-neutral-100">Complexity Basics</span>
-                  <Badge variant="secondary" className="text-xs">90 min</Badge>
-                  <Badge variant="outline" className="text-xs">Difficulty: 1/5</Badge>
-                </div>
-                <p className="text-neutral-600 dark:text-neutral-400 text-sm mb-2">
-                  Big-O, time & space complexity analysis. Every interview starts with "what is the time complexity?"
-                </p>
-                <div className="flex items-center gap-4 text-sm text-neutral-500 dark:text-neutral-400">
-                  <span className="flex items-center gap-1"><BookOpen className="h-3 w-3" /> 3 resources</span>
-                  <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> 90 min</span>
-                </div>
-              </div>
-              <Button className="ml-auto h-10" asChild>
-                <Link href="/dashboard/topics/complexity-basics">
-                  <ArrowRight className="h-4 w-4 mr-1" />
-                  Start Topic
-                </Link>
-              </Button>
-            </div>
-            
-            <div className="text-sm text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
-              <span>WHY NOW</span>
-              <span className="text-neutral-500 dark:text-neutral-400">First topic in your roadmap. No prerequisites required.</span>
-            </div>
-          </CardContent>
-        </Card>
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Metric icon={CheckCircle2} label="Completed" value={`${data.stats.done} / ${data.stats.total}`} tone="text-emerald-600" />
+        <Metric icon={Layers3} label="In progress" value={String(inProgress)} tone="text-sky-600" />
+        <Metric icon={BookOpen} label="Still ahead" value={String(remaining)} tone="text-slate-500" />
+      </section>
 
-        {/* Review Section */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <span className="text-lg">📚</span>
-              <CardTitle>REVIEW</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-neutral-500 dark:text-neutral-400 text-center py-4">
-              No reviews due yet. Complete topics and save answers to build your review queue.
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Progress Overview */}
-        <Card>
-          <CardHeader>
-            <CardTitle>PROGRESS</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-4 bg-neutral-50 dark:bg-neutral-800 rounded-lg">
-                <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">0</div>
-                <div className="text-sm text-neutral-500 dark:text-neutral-400">Completed</div>
-              </div>
-              <div className="text-center p-4 bg-neutral-50 dark:bg-neutral-800 rounded-lg">
-                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">1</div>
-                <div className="text-sm text-neutral-500 dark:text-neutral-400">In Progress</div>
-              </div>
-              <div className="text-center p-4 bg-neutral-50 dark:bg-neutral-800 rounded-lg">
-                <div className="text-3xl font-bold text-neutral-400 dark:text-neutral-500">13</div>
-                <div className="text-sm text-neutral-500 dark:text-neutral-400">Remaining</div>
-              </div>
-              <div className="text-center p-4 bg-neutral-50 dark:bg-neutral-800 rounded-lg">
-                <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">0%</div>
-                <div className="text-sm text-neutral-500 dark:text-neutral-400">Complete</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick Links */}
-      <div className="grid grid-cols-2 gap-4">
-        <Link href="/dashboard/roadmap" className="block">
-          <Card className="hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors cursor-pointer">
-            <CardContent className="py-6 text-center">
-              <BookOpen className="h-8 w-8 mx-auto text-emerald-600 dark:text-emerald-400 mb-2" />
-              <h3 className="font-semibold">View Full Roadmap</h3>
-              <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">All 14 topics, 4 phases</p>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/dashboard/topics/complexity-basics" className="block">
-          <Card className="hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors cursor-pointer">
-            <CardContent className="py-6 text-center">
-              <span className="text-3xl">🎯</span>
-              <h3 className="font-semibold mt-2">Start First Topic</h3>
-              <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Complexity Basics (90 min)</p>
-            </CardContent>
-          </Card>
-        </Link>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Link href="/dashboard/roadmap" className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900"><BookOpen className="mb-3 h-5 w-5 text-emerald-600" /><h3 className="font-semibold">See the full roadmap</h3><p className="mt-1 text-sm text-slate-500 dark:text-neutral-400">Explore every dependency and resource.</p></Link>
+        <Link href="/dashboard/review" className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md dark:border-neutral-800 dark:bg-neutral-900"><RotateCcw className="mb-3 h-5 w-5 text-emerald-600" /><h3 className="font-semibold">Review queue</h3><p className="mt-1 text-sm text-slate-500 dark:text-neutral-400">Bring saved questions back at the right time.</p></Link>
       </div>
     </div>
   )
+}
+
+function Metric({ icon: Icon, label, value, tone }: { icon: typeof BookOpen; label: string; value: string; tone: string }) {
+  return <Card className="border-slate-200 shadow-sm dark:border-neutral-800"><CardContent className="flex items-center gap-3 p-4"><span className={`grid h-10 w-10 place-items-center rounded-xl bg-slate-50 dark:bg-neutral-800 ${tone}`}><Icon className="h-5 w-5" /></span><div><p className="text-lg font-bold tracking-tight">{value}</p><p className="text-xs text-slate-500 dark:text-neutral-400">{label}</p></div></CardContent></Card>
+}
+
+function ReviewState({ count, reason }: { count: number; reason: string }) {
+  return <div className="mx-auto max-w-3xl py-12 text-center"><div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-emerald-100 text-emerald-700"><RotateCcw /></div><h2 className="text-3xl font-bold">Clear your review queue first.</h2><p className="mx-auto mt-3 max-w-xl text-slate-500 dark:text-neutral-400">{reason}</p><Button size="lg" className="mt-7" asChild><Link href="/dashboard/review">Review {count} card{count === 1 ? '' : 's'}<ArrowRight /></Link></Button></div>
+}
+
+function CompletionState({ done, total }: { done: number; total: number }) {
+  return <div className="mx-auto max-w-3xl py-12 text-center"><div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-emerald-100 text-emerald-700"><CheckCircle2 /></div><h2 className="text-3xl font-bold">You completed this track.</h2><p className="mt-3 text-slate-500 dark:text-neutral-400">{done} of {total} topics are complete. Keep the knowledge active with regular review.</p><Button size="lg" className="mt-7" asChild><Link href="/dashboard/review">Open review queue<ArrowRight /></Link></Button></div>
+}
+
+function TodaySkeleton() {
+  return <div className="mx-auto max-w-5xl space-y-6 animate-pulse"><div className="h-8 w-72 rounded-lg bg-slate-200 dark:bg-neutral-800" /><div className="h-72 rounded-3xl bg-slate-100 dark:bg-neutral-900" /><div className="grid grid-cols-3 gap-3">{[1, 2, 3].map((item) => <div key={item} className="h-20 rounded-2xl bg-slate-100 dark:bg-neutral-900" />)}</div></div>
 }

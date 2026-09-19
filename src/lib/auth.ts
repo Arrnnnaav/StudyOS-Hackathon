@@ -7,6 +7,10 @@ import { db } from './db'
 import { TABLES } from './db'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // Required for a reverse proxy such as Amplify and for local `next start`.
+  // Keep this opt-in through environment configuration instead of trusting a
+  // caller-controlled Host header by default.
+  trustHost: process.env.AUTH_TRUST_HOST === 'true',
   adapter: DynamoDBAdapter(db as unknown as DynamoDBDocument, {
     tableName: TABLES.USERS,
     partitionKey: 'PK',

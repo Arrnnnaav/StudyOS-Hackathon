@@ -26,6 +26,8 @@ export interface AskContext {
 
 export interface AskRequest {
   extension_session_token?: string
+  /** Stable per-logical-request UUID. Also accepted as the Idempotency-Key header. */
+  idempotency_key?: string
   topic_id?: string | null
   context: AskContext
   question: string

@@ -2,26 +2,35 @@
 
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ChevronRight, CheckCircle, Circle, BookOpen, Lock, AlertCircle, Clock, Sparkles, RotateCcw } from 'lucide-react'
+import { BookOpen, Lock, AlertCircle, Sparkles, RotateCcw } from 'lucide-react'
 import Link from 'next/link'
-import { dsaFoundations } from '@/data/dsa-curriculum'
+import { dsaFoundations, type Topic } from '@/data/dsa-curriculum'
 import { CoverageChecker } from '@/components/coverage-checker'
 import { QuizRunner } from '@/components/quiz-runner'
+import type { TopicProgress } from '@/shared/contracts'
 
 export default function TopicPage() {
-  const { data: session, status } = useSession()
+  const { status } = useSession()
   const router = useRouter()
   const params = useParams()
   const topicId = params.topicId as string
-  const [topic, setTopic] = useState<any>(null)
-  const [progress, setProgress] = useState<any>(null)
+  const topic = useMemo(
+    () => dsaFoundations.phases.flatMap((phase) => phase.topics).find((item) => item.id === topicId) ?? null,
+    [topicId],
+  )
+  const [progress, setProgress] = useState<Pick<TopicProgress, 'status' | 'startedAt' | 'completedAt' | 'timeSpentMin' | 'resourceCompleted' | 'questionsAsked' | 'helpfulAnswers' | 'reviewsCompleted'>>({
+    status: 'not_started', startedAt: null, completedAt: null, timeSpentMin: 0,
+    resourceCompleted: false, questionsAsked: 0, helpfulAnswers: 0, reviewsCompleted: 0,
+  })
+  const [prereqsMet, setPrereqsMet] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
 
   useEffect(() => {
@@ -31,18 +40,33 @@ export default function TopicPage() {
   }, [status, router])
 
   useEffect(() => {
-    // Find topic in curriculum
-    let foundTopic: any = null
-    dsaFoundations.phases.forEach(phase => {
-      phase.topics.forEach(t => {
-        if (t.id === topicId) foundTopic = t
+    let active = true
+    if (status !== 'authenticated') return () => { active = false }
+    fetch(`/api/topics/${encodeURIComponent(topicId)}`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { topic?: Topic & { progress?: typeof progress; prerequisitesMet?: boolean } } | null) => {
+        if (!active || !data?.topic?.progress) return
+        setProgress(data.topic.progress)
+        setPrereqsMet(data.topic.prerequisitesMet ?? true)
       })
-    })
-    setTopic(foundTopic)
-    
-    // Fetch progress (would call API in production)
-    // setProgress(await fetch(`/api/topics/${topicId}`).then(r => r.json()))
-  }, [topicId])
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [status, topicId])
+
+  const updateProgress = async (action: 'start' | 'complete') => {
+    if (!topic || saving) return
+    setSaving(true)
+    try {
+      const response = await fetch('/api/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topicId: topic.id, action }),
+      })
+      if (response.ok) setProgress((current) => ({ ...current, status: action === 'complete' ? 'done' : 'in_progress' }))
+    } finally {
+      setSaving(false)
+    }
+  }
 
   if (status === 'loading') {
     return <div className="flex h-64 items-center justify-center">Loading...</div>
@@ -63,20 +87,7 @@ export default function TopicPage() {
     )
   }
 
-  // Mock progress for demo
-  const mockProgress = {
-    status: 'not_started',
-    startedAt: null,
-    completedAt: null,
-    timeSpentMin: 0,
-    resourceCompleted: false,
-    questionsAsked: 0,
-    helpfulAnswers: 0,
-    reviewsCompleted: 0
-  }
-
-  const evidenceLabel = computeEvidenceLabel(mockProgress)
-  const prereqsMet = true // Would check against completed topics
+  const evidenceLabel = computeEvidenceLabel(progress)
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
@@ -180,23 +191,23 @@ export default function TopicPage() {
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between py-2 border-b border-neutral-200 dark:border-neutral-700">
                 <span className="text-neutral-600 dark:text-neutral-400">Resource completed</span>
-                <span className="font-medium">{mockProgress.resourceCompleted ? '✓' : '✗'}</span>
+                <span className="font-medium">{progress.resourceCompleted ? '✓' : '✗'}</span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-neutral-200 dark:border-neutral-700">
                 <span className="text-neutral-600 dark:text-neutral-400">Questions asked</span>
-                <span className="font-medium">{mockProgress.questionsAsked}</span>
+                <span className="font-medium">{progress.questionsAsked}</span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-neutral-200 dark:border-neutral-700">
                 <span className="text-neutral-600 dark:text-neutral-400">Helpful explanations</span>
-                <span className="font-medium">{mockProgress.helpfulAnswers}</span>
+                <span className="font-medium">{progress.helpfulAnswers}</span>
               </div>
               <div className="flex items-center justify-between py-2 border-b border-neutral-200 dark:border-neutral-700">
                 <span className="text-neutral-600 dark:text-neutral-400">Reviews completed</span>
-                <span className="font-medium">{mockProgress.reviewsCompleted}</span>
+                <span className="font-medium">{progress.reviewsCompleted}</span>
               </div>
               <div className="flex items-center justify-between py-2">
                 <span className="text-neutral-600 dark:text-neutral-400">Time spent</span>
-                <span className="font-medium">{mockProgress.timeSpentMin} min</span>
+                <span className="font-medium">{progress.timeSpentMin} min</span>
               </div>
             </CardContent>
           </Card>
@@ -205,11 +216,10 @@ export default function TopicPage() {
           <Card className="bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800">
             <CardContent className="pt-6">
               <div className="flex flex-col sm:flex-row gap-4">
-                <Button className="flex-1" asChild>
-                  <Link href={`/dashboard/topics/${topic.id}?action=start`}>
-                    {mockProgress.status === 'not_started' ? 'Start Topic' : 'Continue Topic'}
-                  </Link>
+                <Button className="flex-1" onClick={() => updateProgress('start')} disabled={!prereqsMet || saving || progress.status === 'done'}>
+                  {saving ? 'Saving…' : progress.status === 'not_started' ? 'Start Topic' : progress.status === 'done' ? 'Topic complete' : 'Continue Topic'}
                 </Button>
+                {progress.status !== 'done' && <Button variant="outline" onClick={() => updateProgress('complete')} disabled={!prereqsMet || saving}>Mark complete</Button>}
                 <Button variant="outline" asChild>
                   <Link href="/dashboard/roadmap">
                     Back to Roadmap
@@ -310,7 +320,7 @@ export default function TopicPage() {
   )
 }
 
-function computeEvidenceLabel(progress: any): 'No Evidence' | 'Started' | 'Developing' | 'Reviewed' {
+function computeEvidenceLabel(progress: Pick<TopicProgress, 'status' | 'questionsAsked' | 'reviewsCompleted'>): 'No Evidence' | 'Started' | 'Developing' | 'Reviewed' {
   if (progress.status === 'not_started' && progress.questionsAsked === 0) return 'No Evidence'
   if (progress.status === 'in_progress' || progress.questionsAsked > 0) return 'Developing'
   if (progress.status === 'done' && progress.reviewsCompleted === 0) return 'Developing'

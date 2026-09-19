@@ -4,13 +4,16 @@
  * returns the assistant text. Model id is configurable via BEDROCK_MODEL_ID.
  * Used by /api/ask, /api/coverage, and (optionally) the spatial ask route.
  */
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime'
+import { BedrockRuntimeClient, InvokeModelCommand, InvokeModelWithResponseStreamCommand } from '@aws-sdk/client-bedrock-runtime'
 
 const client = new BedrockRuntimeClient({
   region: process.env.AWS_REGION || 'us-east-1',
 })
 
-export const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0'
+export const ASK_MODEL_ID = process.env.BEDROCK_ASK_MODEL_ID || process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-5-haiku-20241022-v1:0'
+export const COVERAGE_MODEL_ID = process.env.BEDROCK_COVERAGE_MODEL_ID || 'global.anthropic.claude-sonnet-4-5-20250929-v1:0'
+// Backward-compatible name used by the spatial answer route.
+export const MODEL_ID = ASK_MODEL_ID
 
 export class BedrockUnavailableError extends Error {
   constructor(message = 'Bedrock is not available (check credentials/model access).') {
@@ -33,11 +36,12 @@ export async function invokeModel(opts: {
   user: string
   maxTokens?: number
   temperature?: number
+  modelId?: string
 }): Promise<string> {
-  const { system, user, maxTokens = 1200, temperature = 0.3 } = opts
+  const { system, user, maxTokens = 1200, temperature = 0.3, modelId = ASK_MODEL_ID } = opts
   const response = await client.send(
     new InvokeModelCommand({
-      modelId: MODEL_ID,
+      modelId,
       contentType: 'application/json',
       accept: 'application/json',
       body: JSON.stringify({
@@ -55,6 +59,32 @@ export async function invokeModel(opts: {
     throw new Error('Unexpected Bedrock response shape')
   }
   return text
+}
+
+/** Yields Anthropic text deltas from Bedrock's response-stream API. */
+export async function* streamModel(opts: {
+  system: string
+  user: string
+  maxTokens?: number
+  temperature?: number
+  modelId?: string
+}): AsyncGenerator<string> {
+  const { system, user, maxTokens = 1200, temperature = 0.3, modelId = ASK_MODEL_ID } = opts
+  const response = await client.send(new InvokeModelWithResponseStreamCommand({
+    modelId,
+    contentType: 'application/json',
+    accept: 'application/json',
+    body: JSON.stringify({
+      anthropic_version: 'bedrock-2023-05-31', max_tokens: maxTokens, temperature, system,
+      messages: [{ role: 'user', content: user }],
+    }),
+  }))
+  for await (const event of response.body ?? []) {
+    if (!event.chunk?.bytes) continue
+    const payload = JSON.parse(new TextDecoder().decode(event.chunk.bytes)) as { delta?: { text?: string }; completion?: string }
+    const delta = payload.delta?.text ?? payload.completion
+    if (delta) yield delta
+  }
 }
 
 /** Parse a JSON object out of a model response (tolerates markdown fences). */

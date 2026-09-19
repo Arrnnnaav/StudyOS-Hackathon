@@ -1,10 +1,13 @@
 import { auth } from '@/lib/auth'
-import { getUserProgress, getTopicProgress, recordQuestionAsked } from '@/lib/db'
+import { getUserProgress, getTopicProgress } from '@/lib/db'
 import { dsaFoundations } from '@/data/dsa-curriculum'
 import { NextResponse } from 'next/server'
+import { evidenceLabel, prerequisitesDone, toStatusMap } from '@/shared/today'
+import type { Topic, } from '@/data/dsa-curriculum'
+import type { TopicProgress } from '@/shared/contracts'
 
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ topicId: string }> }
 ) {
   try {
@@ -17,26 +20,17 @@ export async function GET(
     const { topicId } = await params
     
     // Find topic in curriculum
-    let topic: any = null
-    let phaseIndex = -1
-    let topicIndex = -1
-    
-    dsaFoundations.phases.forEach((phase, pIdx) => {
-      phase.topics.forEach((t, tIdx) => {
-        if (t.id === topicId) {
-          topic = t
-          phaseIndex = pIdx
-          topicIndex = tIdx
-        }
-      })
-    })
+    const phaseIndex = dsaFoundations.phases.findIndex((phase) => phase.topics.some((topic) => topic.id === topicId))
+    const topicIndex = phaseIndex < 0 ? -1 : dsaFoundations.phases[phaseIndex].topics.findIndex((topic) => topic.id === topicId)
+    const topic: Topic | undefined = phaseIndex < 0 ? undefined : dsaFoundations.phases[phaseIndex].topics[topicIndex]
 
     if (!topic) {
       return NextResponse.json({ error: 'Topic not found' }, { status: 404 })
     }
 
     // Get user progress for this topic
-    const progress = await getTopicProgress(session.user.id, topicId) || {
+    const storedProgress = await getTopicProgress(session.user.id, topicId) as Partial<TopicProgress> | undefined
+    const progress = storedProgress ?? {
       status: 'not_started',
       startedAt: null,
       completedAt: null,
@@ -48,19 +42,21 @@ export async function GET(
     }
 
     // Compute evidence label
-    const evidenceLabel = computeEvidenceLabel(progress)
+    const label = evidenceLabel({
+      status: progress.status ?? 'not_started',
+      questionsAsked: progress.questionsAsked ?? 0,
+      reviewsCompleted: progress.reviewsCompleted ?? 0,
+    })
 
     // Check prerequisites
-    const userProgress = await getUserProgress(session.user.id) // would need all progress
-    const completedTopics = new Set() // Would come from userProgress
-    
-    const prerequisitesMet = topic.prerequisites.every((p: string) => completedTopics.has(p))
+    const userProgress = await getUserProgress(session.user.id)
+    const prerequisitesMet = prerequisitesDone(topic, toStatusMap(userProgress))
 
     return NextResponse.json({
       topic: {
         ...topic,
         progress,
-        evidenceLabel,
+        evidenceLabel: label,
         prerequisitesMet
       },
       phaseIndex,
@@ -71,20 +67,4 @@ export async function GET(
     console.error('Get topic error:', error)
     return NextResponse.json({ error: 'Failed to get topic' }, { status: 500 })
   }
-}
-
-function computeEvidenceLabel(progress: any): 'No Evidence' | 'Started' | 'Developing' | 'Reviewed' {
-  if (progress.status === 'not_started' && progress.questionsAsked === 0) {
-    return 'No Evidence'
-  }
-  if (progress.status === 'in_progress' || progress.questionsAsked > 0) {
-    return 'Developing'
-  }
-  if (progress.status === 'done' && progress.reviewsCompleted === 0) {
-    return 'Developing'
-  }
-  if (progress.reviewsCompleted > 0) {
-    return 'Reviewed'
-  }
-  return 'No Evidence'
 }

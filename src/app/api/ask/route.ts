@@ -1,208 +1,113 @@
-import { auth } from '@/lib/auth'
-import { getExtensionToken, createAsk, trackEvent } from '@/lib/db'
 import { NextResponse } from 'next/server'
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime'
+import { ASK_MODEL_ID, invokeModel } from '@/lib/bedrock'
+import { getAskContext, createAsk, trackEvent } from '@/lib/db'
+import { resolveApiUser } from '@/lib/auth-utils'
+import { abandonAskReservation, askRequestHash, completeAskReservation, parseIdempotencyKey, reserveAsk, takeDailyAskQuota, waitForAskResult, type StoredAskResponse } from '@/lib/ask-safety'
+import type { AskContext, AskRequest, GroundingExcerpt } from '@/shared/contracts'
+import { errorBody } from '@/shared/contracts'
 
-const bedrock = new BedrockRuntimeClient({
-  region: process.env.AWS_REGION || 'us-east-1'
-})
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-haiku-20240307-v1:0'
+const MAX_QUESTION = 2_000
 
 export async function POST(request: Request) {
-  let extensionSessionToken: string | null = null
-  let userId: string | null = null
-  let topicId: string | null = null
-  let context: any = null
-  let question: string | null = null
-  let askId = ''
-
+  let reservation: { userId: string; key: string } | null = null
   try {
-    const session = await auth()
-    
-    // Try extension session token first
-    const body = await request.json()
-    extensionSessionToken = body.extension_session_token || null
-    topicId = body.topic_id || null
-    context = body.context
-    question = body.question
+    const body = await request.json() as AskRequest
+    const user = await resolveApiUser(body as unknown as Record<string, unknown>)
+    if (!user) return NextResponse.json(errorBody('UNAUTHORIZED', 'authentication required'), { status: 401 })
 
-    if (!context || !question) {
-      return NextResponse.json({ error: 'Context and question required' }, { status: 400 })
+    const parsed = parseAsk(body)
+    if (!parsed.ok) return NextResponse.json(errorBody('BAD_REQUEST', parsed.message), { status: 400 })
+    const key = parseIdempotencyKey(request.headers.get('idempotency-key') ?? body.idempotency_key)
+    if (!key) return NextResponse.json(errorBody('IDEMPOTENCY_KEY_REQUIRED', 'provide an Idempotency-Key header or idempotency_key UUID'), { status: 400 })
+
+    const hash = askRequestHash({ topicId: parsed.topicId, question: parsed.question, context: parsed.context, level: body.level })
+    const reserved = await reserveAsk(user.userId, key, hash)
+    if (reserved.state === 'cached') return NextResponse.json(reserved.response, { headers: { 'Idempotency-Replayed': 'true' } })
+    if (reserved.state === 'conflict') return NextResponse.json(errorBody('IDEMPOTENCY_CONFLICT', 'this key was already used for a different request'), { status: 409 })
+    if (reserved.state === 'pending') {
+      const cached = await waitForAskResult(user.userId, key)
+      if (cached) return NextResponse.json(cached, { headers: { 'Idempotency-Replayed': 'true' } })
+      return NextResponse.json(errorBody('REQUEST_IN_PROGRESS', 'an identical request is still running'), { status: 409, headers: { 'Retry-After': '2' } })
+    }
+    reservation = { userId: user.userId, key }
+
+    const quota = await takeDailyAskQuota(user.userId)
+    if (!quota.allowed) {
+      await abandonAskReservation(user.userId, key)
+      reservation = null
+      return NextResponse.json(errorBody('RATE_LIMITED', `daily Ask limit (${quota.limit}) reached`), { status: 429, headers: { 'Retry-After': String(quota.retryAfterSeconds), 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': '0' } })
     }
 
-    // Resolve user
-    if (extensionSessionToken) {
-      const tokenData = await getExtensionToken(extensionSessionToken)
-      if (!tokenData || new Date(tokenData.expiresAt) < new Date()) {
-        return NextResponse.json({ error: 'Invalid or expired extension token' }, { status: 401 })
-      }
-      userId = tokenData.userId
-    } else if (session?.user?.id) {
-      userId = session.user.id
-    } else {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-    }
-
-    askId = crypto.randomUUID()
-    const startTime = Date.now()
-
-    // Build prompt
-    const prompt = buildPrompt(context, question)
-    
-    // Call Bedrock
-    const response = await bedrock.send(new InvokeModelCommand({
-      modelId: MODEL_ID,
-      contentType: 'application/json',
-      accept: 'application/json',
-      body: JSON.stringify({
-        anthropic_version: 'bedrock-2023-05-31',
-        max_tokens: 1000,
-        temperature: 0.3,
-        system: getSystemPrompt(),
-        messages: [{ role: 'user', content: prompt }]
-      })
-    }))
-
-    const responseBody = JSON.parse(new TextDecoder().decode(response.body))
-    const answer = responseBody.content[0].text
-    const latencyMs = Date.now() - startTime
-
-    // Extract grounding
-    const grounding = extractGrounding(context, answer)
-
-    // Check for insufficient context
-    const insufficientContext = answer.toLowerCase().includes('insufficient') || 
-                                 answer.toLowerCase().includes('cannot answer') ||
-                                 answer.toLowerCase().includes('not enough information')
-
-    if (!userId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-    }
-
-    // Persist ask
-    const now = new Date().toISOString()
-    await createAsk({
-      id: askId,
-      userId,
-      topicId,
-      domain: context.domain,
-      pageTitle: context.page_title,
-      selectedText: context.selected_text,
-      nearbyBefore: context.nearby_before,
-      nearbyAfter: context.nearby_after,
-      question,
-      answer,
-      model: MODEL_ID,
-      latencyMs,
-      helpful: null,
-      feedbackReason: null,
-      savedToReview: false,
-      createdAt: now
-    })
-
-    // Track event
-    await trackEvent({
-      eventId: crypto.randomUUID(),
-      eventName: 'point_ask_submitted',
-      timestamp: now,
-      userId,
-      sessionId: 'web',
-      topicId,
-      domain: context.domain,
-      properties: {
-        model: MODEL_ID,
-        latencyMs,
-        selectedChars: context.selected_text?.length || 0,
-        nearbyChars: (context.nearby_before?.length || 0) + (context.nearby_after?.length || 0),
-        questionChars: question.length,
-        insufficientContext
-      }
-    })
-
-    return NextResponse.json({
-      askId,
-      answer,
-      grounding,
-      insufficientContext,
-      latencyMs
-    })
-
+    const answer = await answerAndPersist(user.userId, parsed, body.level)
+    await completeAskReservation(user.userId, key, answer)
+    reservation = null
+    return NextResponse.json(answer, { headers: { 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': String(Math.max(0, quota.limit - quota.count)) } })
   } catch (error) {
+    if (reservation) await abandonAskReservation(reservation.userId, reservation.key).catch(() => undefined)
     console.error('Ask error:', error)
-    
-    // Track failure
-    if (userId) {
-      await trackEvent({
-        eventId: crypto.randomUUID(),
-        eventName: 'point_ask_failed',
-        timestamp: new Date().toISOString(),
-        userId,
-        sessionId: 'web',
-        topicId,
-        domain: context?.domain,
-        properties: {
-          error: error instanceof Error ? error.message : 'Unknown error'
-        }
-      })
-    }
-
-    return NextResponse.json({ error: 'Failed to process request' }, { status: 500 })
+    return NextResponse.json(errorBody('ASK_FAILED', 'failed to process Ask'), { status: 500 })
   }
 }
 
-function getSystemPrompt(): string {
-  return `You are a concise tutor for engineering students.
+export type ParsedAsk = { topicId: string | null; question: string; context: AskContext }
 
-Use only the supplied selected content and nearby context for claims about the selected code/text.
-
-If the provided context is not sufficient to answer reliably, say that clearly: "The selected content doesn't contain enough information to answer this reliably."
-
-Explain:
-1. What the selected part does
-2. Why it matters  
-3. The direct answer to the student's question
-
-Prefer a short example when it improves understanding.
-
-Do not invent file names, line numbers, citations, APIs, or surrounding code that was not provided.`
+export function parseAsk(body: AskRequest): { ok: true } & ParsedAsk | { ok: false; message: string } {
+  const question = typeof body.question === 'string' ? body.question.trim() : ''
+  const context = body.context
+  if (!question) return { ok: false, message: 'question is required' }
+  if (question.length > MAX_QUESTION) return { ok: false, message: 'question is too long' }
+  if (!context || typeof context.selected_text !== 'string' || !context.selected_text.trim()) return { ok: false, message: 'selected context is required' }
+  return {
+    ok: true,
+    topicId: typeof body.topic_id === 'string' ? body.topic_id : null,
+    question,
+    context: {
+      selected_text: context.selected_text.slice(0, 12_000),
+      nearby_before: String(context.nearby_before ?? '').slice(0, 4_000),
+      nearby_after: String(context.nearby_after ?? '').slice(0, 4_000),
+      domain: String(context.domain ?? '').slice(0, 255),
+      page_title: String(context.page_title ?? '').slice(0, 500),
+    },
+  }
 }
 
-function buildPrompt(context: any, question: string): string {
-  return `Selected text:
-\`\`\`
-${context.selected_text}
-\`\`\`
-
-Nearby context (before):
-\`\`\`
-${context.nearby_before || '(none)'}
-\`\`\`
-
-Nearby context (after):
-\`\`\`
-${context.nearby_after || '(none)'}
-\`\`\`
-
-Page: ${context.page_title} (${context.domain})
-
-Question: ${question}`
+export async function answerAndPersist(userId: string, input: ParsedAsk, level?: string): Promise<StoredAskResponse> {
+  const started = Date.now()
+  const history = await getAskContext(userId, input.topicId, input.context.domain, 2)
+  const prompt = buildAskPrompt(input.context, input.question, history)
+  const answer = await invokeModel({ system: askSystemPrompt(level), user: prompt, maxTokens: 1_000, temperature: 0.3, modelId: ASK_MODEL_ID })
+  return persistAskAnswer(userId, input, answer, started, history.length)
 }
 
-function extractGrounding(context: any, answer: string) {
-  const grounding = []
-  
-  if (context.selected_text && answer.toLowerCase().includes(context.selected_text.toLowerCase().slice(0, 50))) {
-    grounding.push({ type: 'selected_text', excerpt: context.selected_text.slice(0, 200) })
+export async function persistAskAnswer(userId: string, input: ParsedAsk, answer: string, started: number, contextUsed: number): Promise<StoredAskResponse> {
+  const response: StoredAskResponse = {
+    askId: crypto.randomUUID(), answer, grounding: extractGrounding(input.context, answer),
+    insufficientContext: /insufficient|cannot answer|not enough information/i.test(answer),
+    latencyMs: Date.now() - started, model: ASK_MODEL_ID, contextUsed,
   }
-  
-  if (context.nearby_before && answer.toLowerCase().includes(context.nearby_before.toLowerCase().slice(0, 50))) {
-    grounding.push({ type: 'nearby_before', excerpt: context.nearby_before.slice(0, 200) })
-  }
-  
-  if (context.nearby_after && answer.toLowerCase().includes(context.nearby_after.toLowerCase().slice(0, 50))) {
-    grounding.push({ type: 'nearby_after', excerpt: context.nearby_after.slice(0, 200) })
-  }
+  const now = new Date().toISOString()
+  await createAsk({
+    id: response.askId, userId, topicId: input.topicId, domain: input.context.domain, pageTitle: input.context.page_title,
+    selectedText: input.context.selected_text, nearbyBefore: input.context.nearby_before, nearbyAfter: input.context.nearby_after,
+    question: input.question, answer, model: ASK_MODEL_ID, latencyMs: response.latencyMs, helpful: null, feedbackReason: null, savedToReview: false, createdAt: now,
+  })
+  void trackEvent({ eventId: crypto.randomUUID(), eventName: 'point_ask_submitted', timestamp: now, userId, sessionId: 'web', topicId: input.topicId, domain: input.context.domain, properties: { model: ASK_MODEL_ID, latencyMs: response.latencyMs, context_turns: contextUsed } }).catch(() => undefined)
+  return response
+}
 
-  return grounding
+export function askSystemPrompt(level?: string) {
+  return `You are a concise ${level || 'student'} tutor. Use only the supplied selected and nearby context for claims. If context is insufficient, say so clearly. Explain what it does, why it matters, and directly answer the question. Do not invent files, line numbers, citations, APIs, or surrounding code.`
+}
+
+export function buildAskPrompt(context: AskContext, question: string, history: Array<{ question?: string; answer?: string }>) {
+  const previous = history.length ? history.map((turn, index) => `Turn ${index + 1} question: ${turn.question}\nTurn ${index + 1} answer: ${turn.answer?.slice(0, 1_200)}`).join('\n\n') : '(none)'
+  return `Selected text:\n\`\`\`\n${context.selected_text}\n\`\`\`\n\nNearby before:\n\`\`\`\n${context.nearby_before || '(none)'}\n\`\`\`\n\nNearby after:\n\`\`\`\n${context.nearby_after || '(none)'}\n\`\`\`\n\nPrior turns (context only; do not repeat them unless relevant):\n${previous}\n\nPage: ${context.page_title} (${context.domain})\n\nQuestion: ${question}`
+}
+
+function extractGrounding(context: AskContext, answer: string): GroundingExcerpt[] {
+  const values: Array<[GroundingExcerpt['type'], string]> = [['selected_text', context.selected_text], ['nearby_before', context.nearby_before], ['nearby_after', context.nearby_after]]
+  return values.filter(([, value]) => value && answer.toLowerCase().includes(value.toLowerCase().slice(0, 50))).map(([type, value]) => ({ type, excerpt: value.slice(0, 200) }))
 }

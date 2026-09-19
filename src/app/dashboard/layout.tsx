@@ -2,13 +2,13 @@
 
 import { useSession } from 'next-auth/react'
 import { useRouter, usePathname } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Separator } from '@/components/ui/separator'
-import { LayoutDashboard, BookOpen, Clock, BarChart, Settings, LogOut, BookMarked, Flame, FolderPlus } from 'lucide-react'
+import { BookOpen, Clock, BarChart, Settings, LogOut, BookMarked, Flame, FolderPlus, Menu, X } from 'lucide-react'
+import { signOut } from 'next-auth/react'
 import { cn } from '@/lib/utils'
 
 const navigation = [
@@ -25,6 +25,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { data: session, status } = useSession()
   const router = useRouter()
   const pathname = usePathname()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -47,14 +48,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return null
   }
 
+  const closeMenu = () => setMenuOpen(false)
+
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 dark:bg-neutral-950 dark:text-neutral-100">
+      {menuOpen && <button aria-label="Close navigation" className="fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-[1px] lg:hidden" onClick={closeMenu} />}
       {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 transform transition-transform duration-200 lg:translate-x-0">
+      <aside className={cn(
+        'fixed inset-y-0 left-0 z-50 w-[17.5rem] border-r border-slate-200/80 bg-white/95 shadow-2xl shadow-slate-950/10 backdrop-blur-xl transition-transform duration-300 dark:border-neutral-800 dark:bg-neutral-900/95 lg:w-64 lg:translate-x-0 lg:shadow-none',
+        menuOpen ? 'translate-x-0' : '-translate-x-full',
+      )}>
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center gap-2 px-6 py-4 border-b border-neutral-200 dark:border-neutral-800">
-            <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">StudyOS</span>
+          <div className="flex items-center justify-between gap-2 px-5 py-5 border-b border-slate-100 dark:border-neutral-800">
+            <Link href="/dashboard/today" onClick={closeMenu} className="flex items-center gap-2.5">
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-600 text-sm font-black text-white shadow-lg shadow-emerald-600/25">S</span>
+              <span className="text-lg font-bold tracking-tight text-slate-950 dark:text-white">StudyOS</span>
+            </Link>
+            <Button variant="ghost" size="icon" className="lg:hidden" onClick={closeMenu} aria-label="Close navigation"><X /></Button>
           </div>
           
           {/* Navigation */}
@@ -65,11 +76,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Link
                   key={item.name}
                   href={item.href}
+                  onClick={closeMenu}
                   className={cn(
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                    'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
                     isActive
-                      ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
-                      : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                      ? 'bg-emerald-50 text-emerald-800 shadow-sm ring-1 ring-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-900/50'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white'
                   )}
                 >
                   <item.icon className="h-5 w-5" />
@@ -80,7 +92,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </nav>
           
           {/* User Menu */}
-          <div className="p-4 border-t border-neutral-200 dark:border-neutral-800">
+          <div className="p-4 border-t border-slate-100 dark:border-neutral-800">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="w-full justify-start gap-3 px-2 py-1.5">
@@ -111,7 +123,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
-                  onClick={() => fetch('/api/auth/signout', { method: 'POST' }).then(() => router.push('/'))}
+                  onClick={() => signOut({ callbackUrl: '/' })}
                   className="text-red-600 dark:text-red-400"
                 >
                   <LogOut className="h-4 w-4" />
@@ -124,13 +136,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </aside>
 
       {/* Main Content */}
-      <main className="lg:ml-64 min-h-screen">
+      <main className="min-h-screen lg:ml-64">
         {/* Top Bar */}
-        <header className="sticky top-0 z-40 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm border-b border-neutral-200 dark:border-neutral-800">
-          <div className="flex items-center justify-between px-6 py-4">
-            <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+        <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-[#f8fafc]/80 backdrop-blur-xl dark:border-neutral-800 dark:bg-neutral-950/80">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="icon" className="border-slate-200 bg-white lg:hidden dark:bg-neutral-900" onClick={() => setMenuOpen(true)} aria-label="Open navigation"><Menu /></Button>
+              <h1 className="text-base font-semibold tracking-tight text-slate-900 dark:text-neutral-100 sm:text-xl">
               {navigation.find(n => pathname === n.href || pathname.startsWith(n.href + '/'))?.name || 'Dashboard'}
-            </h1>
+              </h1>
+            </div>
             <div className="flex items-center gap-4">
               <span className="hidden sm:block text-sm text-neutral-500 dark:text-neutral-400">
                 Year {session?.user?.year || '?'} • {session?.user?.activeTrack || 'DSA Foundations'}
@@ -139,7 +154,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
         
-        <div className="p-6 lg:p-8">
+        <div className="p-4 sm:p-6 lg:p-8">
           {children}
         </div>
       </main>

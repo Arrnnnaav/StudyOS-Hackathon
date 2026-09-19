@@ -177,6 +177,44 @@ async function apiRequest(endpoint, options = {}) {
   return response.json()
 }
 
+// Reads the SSE route without buffering the complete Bedrock answer. The same
+// idempotency key stays in the payload, so a client retry replays—not re-bills.
+async function streamAsk(payload, onToken) {
+  const token = await getExtensionToken()
+  const deviceId = await getDeviceId()
+  const response = await fetch(`${API_BASE}/ask/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Idempotency-Key': payload.idempotency_key, ...(token ? { Authorization: `Bearer ${token}` } : {}), 'X-Device-ID': deviceId },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok || !response.body) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error?.error?.message || error?.error || 'Request failed')
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let completed = null
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const frames = buffer.split('\n\n')
+    buffer = frames.pop() || ''
+    for (const frame of frames) {
+      const event = frame.match(/^event:\s*(.+)$/m)?.[1]
+      const dataLine = frame.match(/^data:\s*(.+)$/m)?.[1]
+      if (!dataLine) continue
+      const data = JSON.parse(dataLine)
+      if (event === 'token') onToken(data.delta || '')
+      if (event === 'complete') completed = data
+      if (event === 'error') throw new Error(data.message || 'Stream failed')
+    }
+  }
+  if (!completed) throw new Error('Stream ended before an answer was complete')
+  return completed
+}
+
 function getDeviceId() {
   return new Promise((resolve) => {
     chrome.storage.local.get('studyos_device_id', (result) => {
@@ -259,22 +297,28 @@ async function handleAsk() {
   askBtn.textContent = 'Asking...'
   
   try {
-    const response = await apiRequest('/ask', {
-      method: 'POST',
-      body: JSON.stringify({
-        extension_session_token: await getExtensionToken(),
-        topic_id: currentTopicId,
-        context: {
-          selected_text: selection.selectedText,
-          nearby_before: selection.nearbyBefore,
-          nearby_after: selection.nearbyAfter,
-          domain: selection.domain,
-          page_title: selection.pageTitle
-        },
-        question,
-        level: levelSelect.value,
-        research_mode: researchToggle.checked
-      })
+    const payload = {
+      extension_session_token: await getExtensionToken(),
+      topic_id: currentTopicId,
+      context: {
+        selected_text: selection.selectedText,
+        nearby_before: selection.nearbyBefore,
+        nearby_after: selection.nearbyAfter,
+        domain: selection.domain,
+        page_title: selection.pageTitle
+      },
+      question,
+      idempotency_key: crypto.randomUUID(),
+      level: levelSelect.value,
+      research_mode: researchToggle.checked
+    }
+    emptyState.classList.add('hidden')
+    questionForm.classList.add('hidden')
+    answerDisplay.classList.remove('hidden')
+    answerContent.textContent = ''
+    const response = await streamAsk(payload, (delta) => {
+      answerContent.textContent += delta
+      answerContent.scrollIntoView({ block: 'end' })
     })
     
     showAnswerDisplay(response)

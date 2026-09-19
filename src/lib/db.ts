@@ -25,7 +25,8 @@ export const TABLES = {
   REVIEWS: 'StudyOSReviews',
   EVENTS: 'StudyOSEvents',
   EXTENSION_TOKENS: 'StudyOSExtensionTokens',
-  PAIRING_CODES: 'StudyOSPairingCodes'
+  PAIRING_CODES: 'StudyOSPairingCodes',
+  ASK_SAFETY: 'StudyOSAskSafety',
 } as const
 
 // User operations
@@ -112,6 +113,9 @@ export async function getTopicProgress(userId: string, topicId: string) {
 
 export async function startTopic(userId: string, topicId: string) {
   const now = new Date().toISOString()
+  const existing = await getTopicProgress(userId, topicId)
+  if (existing?.status === 'done') return
+
   await db.send(new PutCommand({
     TableName: TABLES.PROGRESS,
     Item: {
@@ -128,7 +132,6 @@ export async function startTopic(userId: string, topicId: string) {
       reviewsCompleted: 0,
       updatedAt: now
     },
-    ConditionExpression: 'attribute_not_exists(PK)'
   }))
 }
 
@@ -156,11 +159,15 @@ export async function recordQuestionAsked(userId: string, topicId: string, helpf
   await db.send(new UpdateCommand({
     TableName: TABLES.PROGRESS,
     Key: { PK: `USER#${userId}`, SK: `TOPIC#${topicId}` },
-    UpdateExpression: 'ADD questionsAsked :inc SET helpfulAnswers = if_not_exists(helpfulAnswers, :zero) + :helpful, updatedAt = :now',
+    UpdateExpression: 'ADD questionsAsked :inc SET #status = if_not_exists(#status, :started), startedAt = if_not_exists(startedAt, :now), completedAt = if_not_exists(completedAt, :null), timeSpentMin = if_not_exists(timeSpentMin, :zero), resourceCompleted = if_not_exists(resourceCompleted, :false), helpfulAnswers = if_not_exists(helpfulAnswers, :zero) + :helpful, reviewsCompleted = if_not_exists(reviewsCompleted, :zero), updatedAt = :now',
+    ExpressionAttributeNames: { '#status': 'status' },
     ExpressionAttributeValues: {
       ':inc': 1,
       ':helpful': helpful ? 1 : 0,
       ':zero': 0,
+      ':started': 'in_progress',
+      ':null': null,
+      ':false': false,
       ':now': new Date().toISOString()
     }
   }))
@@ -247,6 +254,15 @@ export async function getAskById(userId: string, askId: string) {
   return asks.find(a => a.id === askId) as any
 }
 
+/** Recent same-topic/page turns used as bounded conversational context. */
+export async function getAskContext(userId: string, topicId: string | null, domain: string, limit = 2) {
+  const asks = await getUserAsks(userId, 50)
+  return asks
+    .filter((ask) => ask.topicId === topicId && ask.domain === domain)
+    .slice(0, limit)
+    .reverse() as Array<{ question?: string; answer?: string }>
+}
+
 // Review operations
 export async function createReview(review: {
   id: string
@@ -286,24 +302,46 @@ export async function getDueReviews(userId: string, now: string) {
   return result.Items as any[]
 }
 
+/** All review cards for a learner, ordered by their next scheduled review. */
+export async function getUserReviews(userId: string) {
+  const result = await db.send(new QueryCommand({
+    TableName: TABLES.REVIEWS,
+    KeyConditionExpression: 'PK = :pk',
+    ExpressionAttributeValues: { ':pk': `USER#${userId}` },
+  }))
+  return (result.Items ?? []).sort((a, b) =>
+    String(a.nextReviewAt ?? '').localeCompare(String(b.nextReviewAt ?? '')),
+  ) as any[]
+}
+
+export async function getReviewById(userId: string, reviewId: string) {
+  const result = await db.send(new GetCommand({
+    TableName: TABLES.REVIEWS,
+    Key: { PK: `USER#${userId}`, SK: `REVIEW#${reviewId}` },
+  }))
+  return result.Item as any
+}
+
 export async function updateReviewRating(reviewId: string, userId: string, rating: 'again' | 'good') {
   const now = new Date().toISOString()
   const intervalDays = rating === 'again' ? 1 : 3
   const nextReviewAt = new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000).toISOString()
 
-  await db.send(new UpdateCommand({
+  const result = await db.send(new UpdateCommand({
     TableName: TABLES.REVIEWS,
     Key: { PK: `USER#${userId}`, SK: `REVIEW#${reviewId}` },
-    UpdateExpression: 'SET reviewCount = reviewCount + :inc, lastRating = :rating, nextReviewAt = :next, #status = :completed, updatedAt = :now, GSI1SK = :next',
-    ExpressionAttributeNames: { '#status': 'status' },
+    // A rated card remains pending for its next interval; it is not a terminal
+    // record. Marking it completed hid it from the learner's future queue.
+    UpdateExpression: 'SET reviewCount = reviewCount + :inc, lastRating = :rating, nextReviewAt = :next, updatedAt = :now, GSI1SK = :next',
     ExpressionAttributeValues: {
       ':inc': 1,
       ':rating': rating,
       ':next': nextReviewAt,
-      ':completed': 'completed',
       ':now': now
-    }
+    },
+    ReturnValues: 'ALL_NEW',
   }))
+  return result.Attributes as { nextReviewAt?: string; reviewCount?: number; lastRating?: 'again' | 'good' } | undefined
 }
 
 // Extension token operations

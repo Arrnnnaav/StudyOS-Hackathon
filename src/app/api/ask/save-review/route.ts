@@ -11,7 +11,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    let { askId, topicId, question, answer } = body
+    const { askId } = body
+    let { topicId, question, answer } = body
 
     if (!askId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })

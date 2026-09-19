@@ -35,7 +35,7 @@ Year/Track → Today Screen → Curated Resources → Point & Ask → Save to Re
 
 ## Architecture
 
-### Production (Ship It Track)
+### Production architecture (single backend path)
 
 ```
 ┌─────────────────┐     ┌──────────────────────┐     ┌─────────────┐
@@ -56,25 +56,21 @@ Year/Track → Today Screen → Curated Resources → Point & Ask → Save to Re
                                    │
                                    ▼
                         ┌──────────────────────┐
-                        │  Amplify Hosting     │
-                        │  (Next.js App)       │
+                        │  AWS App Runner      │
+                        │  (Next.js 16 App)    │
                         └──────────────────────┘
 ```
 
-### Local Development (Build It Track)
+The production API is the **Next.js route-handler layer deployed with the App Runner-hosted app**. The extension calls the same `/api/*` routes; it does not call a separate API Gateway or Lambda service. The SAM template provisions only the AWS resources consumed by those handlers (Cognito, DynamoDB, S3, IAM, and CloudWatch). This keeps the diagram, deployed request path, and source tree aligned.
+
+### Local development
 
 ```
 ┌─────────────────┐     ┌──────────────────────┐     ┌─────────────┐
 │  Chrome Ext     │────▶│  Local Dev Server    │────▶│  DynamoDB   │
-│  (Side Panel)   │     │  Next.js + Local     │     │  Local      │
-└─────────────────┘     │  SAM (LocalStack)    │     │  (Port 8001) │
-                        └──────────┬───────────┘     └─────────────┘
-                                   │
-                                   ▼
-                        ┌──────────────────────┐
-                        │  Local SAM Stack     │
-                        │  (Lambda + API GW)   │
-                        └──────────────────────┘
+│  (Side Panel)   │     │  Next.js handlers    │     │  Local      │
+└─────────────────┘     └──────────────────────┘     │  (Port 8001) │
+                                                       └─────────────┘
 ```
 
 ---
@@ -83,15 +79,14 @@ Year/Track → Today Screen → Curated Resources → Point & Ask → Save to Re
 
 | Service | Purpose |
 |---------|---------|
-| **Amplify Hosting** | Next.js frontend deployment |
+| **AWS App Runner** | Next.js 16 frontend and route-handler deployment |
 | **Cognito** | Student authentication (Google OAuth) |
-| **API Gateway + Lambda** (SAM) | Production REST API for web + extension |
-| **Next.js Route Handlers** | Development/local API (no Lambda cold starts) |
+| **Next.js Route Handlers** | Production API for the web app and extension, hosted with App Runner |
 | **DynamoDB** | User state, progress, asks, reviews, events, pairings |
 | **Bedrock** | Grounded explanations (Claude 3 Haiku via Converse API) |
 | **S3** | Point & Ask crop storage (7-day lifecycle) |
 | **CloudWatch** | Logs, metrics, structured JSON logs for operator dashboard |
-| **SAM CLI** | Local development + production deployment |
+| **SAM CLI** | Provisions the application's AWS resources |
 
 ---
 
@@ -119,7 +114,7 @@ cp .env.example .env.local
 docker run -d --name dynamodb-local -p 8001:8000 amazon/dynamodb-local:latest -jar DynamoDBLocal.jar -sharedDb
 
 # Create tables
-pnpm run --filter=@studyos/db create-tables  # or node scripts/create-tables.mjs
+node scripts/create-tables.mjs
 
 # Run dev server
 pnpm dev
@@ -142,11 +137,34 @@ cd infra
 sam build
 sam deploy --guided
 
-# Deploy frontend to Amplify
-# Connect GitHub repo in Amplify Console
-# Build: pnpm build, Output: .next
-# Set env vars from SAM outputs: NEXT_PUBLIC_API_BASE, COGNITO_*
+# Deploy the Next.js 16 app through App Runner
+# App Runner Console → Create service → Source code repository → this repo
+# Configuration source: Repository (uses apprunner.yaml)
+# Runtime role / instance role: AppRunnerInstanceRoleArn from the SAM output
+# Configure the runtime variables listed below, then deploy.
+# Point the extension API base at the deployed App Runner URL.
 ```
+
+> Hosting decision: this app stays on **Next.js 16.3.5** and deploys to **AWS App Runner (Node.js 22)**. Amplify Hosting's published SSR compatibility list currently documents Next.js through v15, so it is not the Ship It target for this branch. App Runner's managed Node.js 22 runtime supports source-repository deployments configured by `apprunner.yaml`.
+
+### App Runner runtime variables
+
+Set these in the App Runner service; keep secrets in App Runner or Secrets Manager, never in Git:
+
+```text
+AWS_REGION=<same region as SAM stack and Bedrock model>
+AUTH_TRUST_HOST=true
+NEXTAUTH_URL=https://<your-app-runner-service-url>
+NEXTAUTH_SECRET=<new 32-byte random secret>
+GOOGLE_CLIENT_ID=<Google OAuth client ID>
+GOOGLE_CLIENT_SECRET=<Google OAuth client secret>
+BEDROCK_ASK_MODEL_ID=anthropic.claude-3-5-haiku-20241022-v1:0
+BEDROCK_COVERAGE_MODEL_ID=global.anthropic.claude-sonnet-4-5-20250929-v1:0
+ASK_DAILY_LIMIT=20
+ASK_IDEMPOTENCY_TTL_SECONDS=86400
+```
+
+Do **not** set `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` as app variables. The App Runner instance role receives temporary credentials automatically.
 
 ---
 
@@ -206,7 +224,7 @@ StudyOS-Hackathon/
 │   ├── popup.html, popup.js (Alt+Shift+A launcher)
 │   └── icons/ (16/32/48/128px)
 ├── infra/
-│   ├── template.yaml (SAM: Cognito, 7 DynamoDB tables, HTTP API, 7 Lambdas, Bedrock IAM, S3, CloudWatch)
+│   ├── template.yaml (SAM: Cognito, 8 DynamoDB tables, Bedrock IAM, S3, CloudWatch)
 │   └── samconfig.toml
 ├── scripts/
 │   ├── create-tables.mjs (DynamoDB table provisioning)
@@ -224,8 +242,8 @@ StudyOS-Hackathon/
 
 | Track | Implementation |
 |-------|----------------|
-| **Ship It** | Deployed on Amplify + Lambda + Bedrock + DynamoDB + S3 + CloudWatch |
-| **Build It** | Runs locally with SAM CLI + DynamoDB Local (Docker) |
+| **Ship It** | App Runner-hosted Next.js 16 handlers + Bedrock + DynamoDB + S3 + CloudWatch |
+| **Build It** | Next.js locally + DynamoDB Local (Docker) |
 | **Best UI** | Tailwind + shadcn/ui, polished Today screen & spatial extension |
 
 ---
@@ -250,7 +268,7 @@ StudyOS-Hackathon/
 - ✅ Event tracking (signup, ask, feedback, review, spatial metrics)
 - ✅ Operator dashboard (metrics, funnel, domains, errors, spatial vs text-selection split)
 - ✅ Extension pairing via 6-char code (10-min expiry, single-use)
-- ✅ SAM stack (`infra/template.yaml`): Cognito, 7 DynamoDB tables, HTTP API, 7 Lambdas, Bedrock IAM, CloudWatch, **S3 for Point & Ask crops**
+- ✅ SAM stack (`infra/template.yaml`): Cognito, 8 DynamoDB tables, Bedrock IAM, CloudWatch, **S3 for Point & Ask crops**
 
 ---
 
@@ -320,7 +338,7 @@ score = overlap + containmentBonus - centerDistancePenalty - oversizedContainerP
 | Event Tracking | ✅ | signup, onboarding, topic, ask, feedback, review, spatial |
 | Operator Dashboard | ✅ | Metrics, funnel, domains, errors, spatial vs text split |
 | Extension Pairing | ✅ | 6-char code, 10-min TTL, single-use |
-| SAM Stack | ✅ | Cognito, 7 DynamoDB tables, HTTP API, 7 Lambdas, Bedrock IAM, S3, CloudWatch |
+| SAM Stack | ✅ | Cognito, 8 DynamoDB tables, Bedrock IAM, S3, CloudWatch |
 | S3 Crop Storage | ✅ | Private bucket, 7-day lifecycle, CORS for extension |
 | Coverage Lite | ✅ | Paste resource → per-objective Strong/Moderate/Weak/Missing |
 | Per-Topic Quiz | ✅ | Generated from objectives, evidence recorded |
@@ -350,8 +368,9 @@ score = overlap + containmentBonus - centerDistancePenalty - oversizedContainerP
 |-------|--------|
 | TypeScript (`pnpm exec tsc --noEmit`) | ✅ Clean |
 | Unit Tests (`pnpm test`) | 31/31 pass |
-| Production Build (`pnpm build`) | ✅ Exit 0, 24 routes |
-| E2E (local DynamoDB) | 11/11 pages 200, auth-gating 401, resolver logic verified |
+| Production Build (`pnpm build`) | Run before submission; validates the App Router production bundle |
+| E2E (local DynamoDB) | `node scripts/e2e-features.mjs` after DynamoDB Local is running |
+| AWS deployment proof | Not committed: run `sam deploy` and an App Runner deploy with your AWS role, then capture the deployed URL and a Bedrock-backed request for the submission |
 
 ---
 
@@ -359,8 +378,8 @@ score = overlap + containmentBonus - centerDistancePenalty - oversizedContainerP
 
 | Track | Implementation |
 |-------|----------------|
-| **Ship It** | Deployed on Amplify + Lambda + Bedrock + DynamoDB + S3 + CloudWatch |
-| **Build It** | Runs locally with SAM CLI + DynamoDB Local (Docker) |
+| **Ship It** | App Runner-hosted Next.js 16 handlers + Bedrock + DynamoDB + S3 + CloudWatch |
+| **Build It** | Next.js locally + DynamoDB Local (Docker) |
 | **Best UI** | Tailwind + shadcn/ui, polished Today screen & spatial extension |
 
 ---

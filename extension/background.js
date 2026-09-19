@@ -126,7 +126,7 @@ async function apiRequest(endpoint, options = {}) {
 async function askQuestion(data) {
   return apiRequest('/ask', {
     method: 'POST',
-    body: JSON.stringify(data)
+    body: JSON.stringify({ ...data, idempotency_key: data.idempotency_key || crypto.randomUUID() })
   })
 }
 
