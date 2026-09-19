@@ -194,6 +194,7 @@ export interface SpatialAnchor {
   id: string
   type: string
   text?: string
+  label?: string
   bbox: { x: number; y: number; width: number; height: number }
   score?: number
   href?: string
@@ -224,4 +225,76 @@ export interface SpatialAskResponse {
   sources?: { id: string; title: string; url: string }[]
   cited?: string[]
   quota?: { signed_in: boolean; remaining: number; limit: number }
+  resolved_target?: {
+    candidateId: string
+    confidence: Confidence
+    type?: string
+    label?: string
+    alternatives?: string[]
+  }
+  nearby_context?: string
+}
+
+// ---------- Spatial resolved-target pipeline (plan Phases 1/4/7) ----------
+/** A 2D axis-aligned rectangle in viewport (CSS px) coordinates. */
+export interface BBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export type CandidateSource = 'dom' | 'pdf_text'
+
+/** Confidence that a candidate is what the student pointed at. */
+export type Confidence = 'high' | 'medium' | 'low'
+
+/** A discovered, geometry-scored object under/near the mark. */
+export interface CandidateObject {
+  id: string
+  source: CandidateSource
+  type?: string
+  text?: string
+  label?: string
+  bbox: BBox
+  geometry: {
+    overlap: number
+    centerDistance: number
+    containment: boolean
+  }
+}
+
+/** The single most-likely object the student pointed at. */
+export interface ResolvedTarget {
+  candidateId: string
+  confidence: Confidence
+  alternatives?: string[]
+}
+
+/** Complete spatial context sent to the answerer. */
+export interface SpatialContext {
+  mark: BBox
+  target: CandidateObject
+  alternatives?: CandidateObject[]
+  page: {
+    title: string
+    domain: string
+    type: 'web' | 'pdf'
+  }
+}
+
+/** Wire shape for a spatial ask once resolution has happened. */
+export interface ResolvedSpatialAskRequest {
+  context_type: 'spatial'
+  resolved_target: {
+    type?: string
+    label?: string
+    text?: string
+    confidence: Confidence
+  }
+  nearby_context?: string
+  domain: string
+  page_title: string
+  extension_session_token?: string
+  question: string
 }

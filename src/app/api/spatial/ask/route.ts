@@ -2,30 +2,29 @@ import { NextResponse } from 'next/server'
 import { resolveApiUser } from '@/lib/auth-utils'
 import { createAsk, trackEvent } from '@/lib/db'
 import { invokeModel, MODEL_ID } from '@/lib/bedrock'
-import { rankAnchors, anchorsToContext, buildSpatialPrompt } from '@/shared/spatial'
-import type { SpatialAskRequest, SpatialAskResponse } from '@/shared/contracts'
+import { anchorsToContext } from '@/shared/spatial'
+import { resolve, candidateGeometry, describeTarget } from '@/shared/resolver'
+import type { BBox, CandidateObject, Confidence, SpatialAnchor, SpatialAskRequest, SpatialAskResponse } from '@/shared/contracts'
 import { errorBody } from '@/shared/contracts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const MAX_QUESTION = 2000
-const MAX_ANCHORS = 40
+const MAX_ANCHORS = 60
 
 /**
- * POST /api/spatial/ask — rectangle/circle/freehand Point & Ask.
- * Body: { extension_session_token?, question, marks, anchors, canvas, page, research?, level? }
- * Groups on the DOM/PDF text under the mark (never the whole page). If Bedrock
- * is unavailable, returns a clear error — the client shows the failure state.
+ * POST /api/spatial/ask — rectangle Point & Ask.
+ * Body: { extension_session_token?, question, marks, anchors, canvas, page }
+ *
+ * Pipeline (plan Phase 7): anchors → deterministic resolver → resolved_target → answerer.
+ * Resolution never uses the model; the model answers only about the resolved object.
  */
 export async function POST(request: Request) {
   const started = Date.now()
   try {
     const body = (await request.json()) as SpatialAskRequest
-
-    // Auth: web session OR extension token (resolveApiUser handles both).
     const user = await resolveApiUser(body as unknown as Record<string, unknown>)
-
     if (!user) {
       return NextResponse.json(errorBody('UNAUTHORIZED', 'authentication required'), { status: 401 })
     }
@@ -35,20 +34,42 @@ export async function POST(request: Request) {
     const anchors = Array.isArray(body.anchors) ? body.anchors.slice(0, MAX_ANCHORS) : []
     const page = body.page ?? { url: '', title: '', surface: 'web' as const }
 
-    if (!question) {
-      return NextResponse.json(errorBody('BAD_REQUEST', 'question is required'), { status: 400 })
-    }
-    if (question.length > MAX_QUESTION) {
-      return NextResponse.json(errorBody('TOO_LONG', 'question too long'), { status: 400 })
-    }
-    if (!marks.length) {
-      return NextResponse.json(errorBody('BAD_REQUEST', 'at least one mark is required'), { status: 400 })
+    if (!question) return NextResponse.json(errorBody('BAD_REQUEST', 'question is required'), { status: 400 })
+    if (question.length > MAX_QUESTION) return NextResponse.json(errorBody('TOO_LONG', 'question too long'), { status: 400 })
+    if (!marks.length) return NextResponse.json(errorBody('BAD_REQUEST', 'at least one mark is required'), { status: 400 })
+
+    // Convert DOM/PDF anchors into candidate objects.
+    const candidates: CandidateObject[] = anchors.map((a) => ({
+      id: a.id || 'anchor',
+      source: a.page ? ('pdf_text' as const) : ('dom' as const),
+      type: a.type,
+      text: (a.text || '').slice(0, 600),
+      label: (a.label as string | undefined) || typeLabel(a.type),
+      bbox: a.bbox as BBox,
+      geometry: { overlap: 0, centerDistance: 0, containment: false },
+    }))
+
+    // Use the first mark as the reference rectangle.
+    const mark: BBox = {
+      x: marks[0].x ?? 0,
+      y: marks[0].y ?? 0,
+      width: marks[0].width ?? 0,
+      height: marks[0].height ?? 0,
     }
 
-    const selected = rankAnchors(anchors, marks, 8)
-    const markedText = anchorsToContext(selected)
+    // Resolve deterministically (no AI).
+    const { target, candidates: ranked } = resolve(mark, candidates)
+    const chosen =
+      ranked.find((c) => c.id === target.candidateId) ??
+      ranked[0] ??
+      null
 
-    // Track start (privacy-safe: never question/answer text).
+    // Privacy: only the resolved object's text (+ nearest context) leaves the browser.
+    const nearby = anchorsToContext(ranked.filter((c) => c.id !== chosen?.id), 600)
+    const domain = page.url ? new URL(page.url, 'http://localhost').hostname : ''
+    const desc = chosen ? describeTarget(chosen) : {}
+
+    // Track start (privacy-safe — never question/answer/resolution text).
     void trackEvent({
       eventId: crypto.randomUUID(),
       eventName: 'point_ask_started',
@@ -56,25 +77,33 @@ export async function POST(request: Request) {
       userId: user.userId,
       sessionId: 'spatial',
       topicId: null,
-      domain: page.url ? new URL(page.url, 'http://localhost').hostname : null,
-      properties: { request_kind: 'spatial', surface: page.surface },
+      domain,
+      properties: {
+        request_kind: 'spatial',
+        context_type: 'spatial',
+        resolution_confidence: target.confidence,
+        candidate_type: chosen?.type || null,
+        candidate_count: candidates.length,
+      },
     }).catch(() => {})
 
-    const prompt = buildSpatialPrompt({
-      question,
-      markedText,
+    const prompt = buildResolvedPrompt({
+      type: desc.type,
+      label: desc.label,
+      content: (chosen?.text || ''),
+      nearby,
+      domain,
       pageTitle: page.title || '',
-      pageUrl: page.url || '',
-      surface: page.surface === 'pdf' ? 'pdf' : 'web',
+      question,
+      confidence: target.confidence,
     })
 
     let answer: string
     let provider = 'none'
     try {
-      answer = await invokeModel({ system: contextSystem(body.research), user: prompt, maxTokens: 900, temperature: 0.3 })
+      answer = await invokeModel({ system: RESOLVED_SYSTEM, user: prompt, maxTokens: 900, temperature: 0.3 })
       provider = 'bedrock'
     } catch (err) {
-      // Bedrock unavailable — surface it clearly so the client shows failure.
       void trackEvent({
         eventId: crypto.randomUUID(),
         eventName: 'point_ask_failed',
@@ -89,15 +118,14 @@ export async function POST(request: Request) {
     }
 
     const latencyMs = Date.now() - started
-    // Persist the ask for history + the operator stream.
     const askId = crypto.randomUUID()
     await createAsk({
       id: askId,
       userId: user.userId,
       topicId: null,
-      domain: page.url ? new URL(page.url, 'http://localhost').hostname : '',
+      domain,
       pageTitle: page.title || '',
-      selectedText: markedText.slice(0, 800),
+      selectedText: (chosen?.text || '').slice(0, 800),
       nearbyBefore: '',
       nearbyAfter: '',
       question,
@@ -117,21 +145,35 @@ export async function POST(request: Request) {
       sessionId: 'spatial',
       topicId: null,
       domain: null,
-      properties: { latencyMs, provider },
+      properties: {
+        latencyMs,
+        provider,
+        request_kind: 'spatial',
+        resolution_confidence: target.confidence,
+      },
     }).catch(() => {})
 
     const response: SpatialAskResponse = {
       id: askId,
       answer,
-      anchors_used: selected,
-      confidence: Math.min(1, markedText.length > 40 ? 0.9 : 0.55),
+      anchors_used: (chosen ? [chosen] : []) as SpatialAnchor[],
+      confidence: confidenceToNum(target.confidence),
       provider,
       model: MODEL_ID,
       vision: false,
       ocr: false,
-      sources: body.research ? [] : undefined,
-      cited: body.research ? [] : undefined,
+      sources: undefined,
+      cited: undefined,
     }
+    // Attach the resolved target so the client can show the grounding chip.
+    response.resolved_target = {
+      candidateId: target.candidateId,
+      confidence: target.confidence,
+      type: desc.type,
+      label: desc.label || typeLabel(desc.type),
+      alternatives: target.alternatives,
+    }
+    response.nearby_context = nearby
     return NextResponse.json(response)
   } catch (error) {
     console.error('Spatial ask error:', error)
@@ -139,17 +181,60 @@ export async function POST(request: Request) {
   }
 }
 
-function contextSystem(research?: boolean): string {
-  const base = [
-    'You are a concise, honest tutor for engineering students.',
-    'Use ONLY the marked/selected text and its immediate context for claims about the student\'s selection.',
-    'If the provided text is not enough to answer reliably, say so plainly.',
-    'Explain: (1) what the selected part does, (2) why it matters, (3) the direct answer.',
-    'Prefer a short example when it helps. Do not invent files, lines, APIs, or surrounding code.',
-    'Do not fabricate citations or sources.',
-  ]
-  if (research) {
-    base.push('You may reason about the general topic to help, but keep claims about the student\'s selection grounded in the marked text.')
+function typeLabel(type?: string): string | undefined {
+  if (!type) return undefined
+  const map: Record<string, string> = {
+    pre: 'Code block', code: 'Code', p: 'Paragraph', h1: 'Heading', h2: 'Heading', h3: 'Heading',
+    td: 'Table cell', tr: 'Table row', img: 'Image', figure: 'Figure', button: 'Button', a: 'Link',
+    figcaption: 'Caption', li: 'List item', selection: 'Selection',
   }
-  return base.join('\n')
+  return map[type] ?? type
 }
+
+function confidenceToNum(c: Confidence): number {
+  return c === 'high' ? 0.9 : c === 'medium' ? 0.7 : 0.4
+}
+
+function buildResolvedPrompt(o: {
+  type?: string
+  label?: string
+  content: string
+  nearby: string
+  domain: string
+  pageTitle: string
+  question: string
+  confidence: Confidence
+}): string {
+  const { type, label, content, nearby, domain, pageTitle, question, confidence } = o
+  return [
+    'The student pointed to a specific object on a page and asked about it.',
+    `Page: ${pageTitle} (${domain})`,
+    `Resolution confidence: ${confidence}`,
+    '',
+    'RESOLVED OBJECT:',
+    `TYPE: ${label || type || 'unknown'}`,
+    'CONTENT:',
+    '```',
+    content || '(no text content was available under the object)',
+    '```',
+    '',
+    'NEARBY CONTEXT:',
+    '```',
+    nearby || '(none)',
+    '```',
+    '',
+    `QUESTION: ${question}`,
+    '',
+    'Explain what the resolved object does, why it matters, and answer the question directly.',
+    'Base claims about the object ONLY on its CONTENT above; do not invent code or text that was not shown.',
+    'If the CONTENT is insufficient to answer reliably, say so clearly rather than guessing.',
+    'This object was chosen by a geometric resolver, not guessed by a model.',
+  ].join('\n')
+}
+
+const RESOLVED_SYSTEM = [
+  'You are a concise, honest tutor for engineering students.',
+  'Answer specifically about the RESOLVED OBJECT the student pointed to.',
+  'Never conflate the nearby context with the object itself.',
+  'Do not invent files, line numbers, citations, APIs, or surrounding code.',
+].join('\n')

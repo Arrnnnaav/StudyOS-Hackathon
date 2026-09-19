@@ -50,7 +50,7 @@ export function rankAnchors(anchors: SpatialAnchor[], marks: SpatialMark[], limi
 }
 
 /** Join ranked anchor text into model-facing context, deduped and bounded. */
-export function anchorsToContext(anchors: SpatialAnchor[], maxChars = 1800): string {
+export function anchorsToContext(anchors: { text?: string }[], maxChars = 1800): string {
   const seen = new Set<string>()
   const parts: string[] = []
   for (const a of anchors) {

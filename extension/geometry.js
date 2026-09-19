@@ -87,7 +87,73 @@
       .sort((a, b) => b.score - a.score || (String(b.text || '').length - String(a.text || '').length) || (a.bbox.width * a.bbox.height) - (b.bbox.width * b.bbox.height));
   }
 
-  const api = { bboxOfPoints, simplify, strokeToMark, shapeToMark, intersectArea, samplePoints, anchorFilter, scoreAnchor, rankAnchors };
+  /* Nearest heading above an element, for a human-readable candidate label. */
+  function nearestHeading(element) {
+    let node = element;
+    while (node && node !== document.documentElement) {
+      if (/^(H1|H2|H3|H4|H5|H6)$/.test(node.tagName || '')) {
+        const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+        return text.slice(0, 80);
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  /* Client mirror of the server resolver (src/shared/resolver.ts). Picks the most
+     likely candidate under a mark and classifies confidence by score margin. */
+  function centerDistance(a, b) {
+    const ca = { x: a.x + a.width / 2, y: a.y + a.height / 2 };
+    const cb = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    return Math.hypot(ca.x - cb.x, ca.y - cb.y);
+  }
+  function area(b) { return Math.max(0, b.width) * Math.max(0, b.height); }
+  function contains(outer, inner) {
+    return inner.x >= outer.x && inner.y >= outer.y &&
+      inner.x + inner.width <= outer.x + outer.width &&
+      inner.y + inner.height <= outer.y + outer.height;
+  }
+  function geometry(mark, cand) {
+    const inter = intersectArea(mark, cand.bbox);
+    const markArea = area(mark);
+    return {
+      overlap: markArea ? Math.min(1, Math.round((inter / markArea) * 1000) / 1000) : 0,
+      centerDistance: Math.round(centerDistance(mark, cand.bbox) * 1000) / 1000,
+      containment: contains(mark, cand.bbox),
+    };
+  }
+  function classifyConfidence(top, second) {
+    if (second === undefined) return 'high';
+    const gap = top - second;
+    if (top >= 0.7 && gap >= 0.3) return 'high';
+    if (gap >= 0.12) return 'medium';
+    return 'low';
+  }
+  function resolveBest(mark, candidates) {
+    const scored = candidates
+      .map(c => {
+        const g = geometry(mark, c);
+        const diag = Math.hypot(mark.width, mark.height) || 1;
+        const centerPenalty = Math.min(0.5, g.centerDistance / diag);
+        const oversized = (area(c.bbox) > area(mark) * 6 && area(c.bbox) > 40000) ? 0.5 : 0;
+        const score = g.overlap + (g.containment ? 0.2 : 0) - centerPenalty - oversized;
+        return { c: { ...c, geometry: g }, score: Math.round(score * 1000) / 1000 };
+      })
+      .filter(s => s.score > 0.05)
+      .sort((a, b) => b.score - a.score);
+    if (!scored.length) return { target: { candidateId: '', confidence: 'low', alternatives: [] }, candidates: [] };
+    const top = scored[0], second = scored[1];
+    return {
+      target: {
+        candidateId: top.c.id,
+        confidence: classifyConfidence(top.score, second && second.score),
+        alternatives: scored.slice(1, 4).map(s => s.c.id),
+      },
+      candidates: scored.map(s => s.c),
+    };
+  }
+
+  const api = { bboxOfPoints, simplify, strokeToMark, shapeToMark, intersectArea, samplePoints, anchorFilter, scoreAnchor, rankAnchors, resolveBest, nearestHeading, geometry };
   root.StudyOSGeometry = api;
   root.SpatialGeometry = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
