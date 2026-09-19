@@ -94,8 +94,11 @@ export interface Profile {
   activeTrack?: string
   college?: string
   branch?: string
+  phone?: string
   leetcode?: string
   github?: string
+  linkedin?: string
+  profileCompletedAt?: string
   referralSource?: string
 }
 

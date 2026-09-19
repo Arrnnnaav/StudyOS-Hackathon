@@ -10,6 +10,7 @@ import {
   BatchWriteCommand,
   TransactWriteCommand
 } from '@aws-sdk/lib-dynamodb'
+import type { StudentProfileInput } from '@/shared/student-profile'
 
 const client = new DynamoDBClient({
   region: process.env.AWS_REGION || 'us-east-1',
@@ -61,6 +62,76 @@ export async function getUserById(userId: string) {
     Key: { PK: `USER#${userId}`, SK: 'PROFILE' }
   }))
   return result.Item as any
+}
+
+export type StoredStudentProfile = StudentProfileInput & {
+  PK: string
+  SK: 'PROFILE'
+  email: string
+  image: string | null
+  createdAt: string
+  updatedAt: string
+  profileCompletedAt: string
+}
+
+export async function getStudentProfile(userId: string): Promise<StoredStudentProfile | undefined> {
+  return await getUserById(userId) as StoredStudentProfile | undefined
+}
+
+export async function saveStudentProfile(
+  userId: string,
+  profile: StudentProfileInput,
+  identity: { email: string; image: string | null },
+): Promise<StoredStudentProfile> {
+  const now = new Date().toISOString()
+  const existing = await getStudentProfile(userId)
+  const record: StoredStudentProfile = {
+    PK: `USER#${userId}`,
+    SK: 'PROFILE',
+    ...profile,
+    email: identity.email,
+    image: identity.image,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    profileCompletedAt: existing?.profileCompletedAt || now,
+  }
+  await db.send(new PutCommand({ TableName: TABLES.USERS, Item: record }))
+  return record
+}
+
+export type StudentLearningSummary = {
+  points: number
+  streakDays: number
+  recentActivity: Array<{ kind: 'topic_completed' | 'review_completed'; topicId: string; occurredAt: string }>
+}
+
+export async function getStudentLearningSummary(userId: string): Promise<StudentLearningSummary> {
+  const progress = await getUserProgress(userId)
+  const activities: StudentLearningSummary['recentActivity'] = []
+  let points = 0
+
+  for (const item of progress) {
+    if (item.status === 'done' && item.completedAt) {
+      points += 100
+      activities.push({ kind: 'topic_completed', topicId: item.topicId, occurredAt: item.completedAt })
+    }
+    const reviewsCompleted = Number(item.reviewsCompleted || 0)
+    if (reviewsCompleted > 0 && item.updatedAt) {
+      points += reviewsCompleted * 15
+      activities.push({ kind: 'review_completed', topicId: item.topicId, occurredAt: item.updatedAt })
+    }
+  }
+
+  activities.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+  const activityDays = new Set(activities.map((activity) => activity.occurredAt.slice(0, 10)))
+  let streakDays = 0
+  const cursor = new Date()
+  while (activityDays.has(cursor.toISOString().slice(0, 10))) {
+    streakDays++
+    cursor.setUTCDate(cursor.getUTCDate() - 1)
+  }
+
+  return { points, streakDays, recentActivity: activities.slice(0, 10) }
 }
 
 export async function getUserByEmail(email: string) {
