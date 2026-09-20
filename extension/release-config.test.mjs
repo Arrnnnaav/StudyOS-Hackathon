@@ -31,6 +31,7 @@ test('student setup does not depend on a source folder or remotely hosted extens
   assert.match(settings, /Chrome Web Store/)
   assert.doesNotMatch(spatialContent, /localhost:3000/)
   assert.match(spatialContent, /Gemini Google Search/)
+  assert.match(spatialContent, /Public-web fallback sources/)
 })
 
 test('clearing a spatial selection also resets opt-in research mode', () => {

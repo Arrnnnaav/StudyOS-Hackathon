@@ -130,6 +130,26 @@ test('reports an unavailable provider separately from insufficient evidence', as
   )
 })
 
+test('falls back to cited public-web results when Gemini Search grounding is quota-blocked', async () => {
+  let searchBody = ''
+  const result = await research(input, deps(async (url, init) => {
+    const target = String(url)
+    if (target.includes('duckduckgo.com')) {
+      searchBody = String(init?.body)
+      return new Response('<a class="result__a" href="https://nodejs.org/en/about/previous-releases">Node.js releases</a><a class="result__snippet">Node.js 24 is an Active LTS release line.</a>')
+    }
+    const body = JSON.parse(String(init?.body)) as { tools?: unknown }
+    if (body.tools) return jsonResponse({ error: 'quota exhausted' }, 429)
+    return jsonResponse({ candidates: [{ content: { parts: [{ text: 'Node.js 24 is the LTS line. [1] [9]' }] } }] })
+  }, { config: { bedrockEnabled: false, geminiApiKey: 'test-gemini-key' } }))
+
+  assert.equal(result.provider, 'gemini-web-fallback')
+  assert.equal(result.sources[0]?.url, 'https://nodejs.org/en/about/previous-releases')
+  assert.match(result.answer, /\[1\]/)
+  assert.doesNotMatch(result.answer, /\[2\]/)
+  assert.equal(new URLSearchParams(searchBody).get('q'), input.question)
+})
+
 test('does not call Gemini when Bedrock returned an uncited answer', async () => {
   const calls: string[] = []
   await assert.rejects(research(input, deps(async (url) => {

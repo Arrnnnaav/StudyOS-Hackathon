@@ -25,7 +25,7 @@ export default function PrivacyPage() {
         <section className="space-y-2">
           <h2 className="text-xl font-semibold">AI and public-web research</h2>
           <p>Normal Ask sends your selected text, nearby context, question, page metadata, and the most recent previous questions and answers in that learning context to Gemini to generate an explanation.</p>
-          <p>When you explicitly enable Research Mode, the selected text and question may additionally be sent to Gemini Google Search to find current public-web sources.</p>
+          <p>When you explicitly enable Research Mode, the selected text and question may be sent to Gemini Google Search to find current public-web sources. If that provider is unavailable, the question is sent to DuckDuckGo to retrieve public links before Gemini prepares a cited answer from those links.</p>
           <p>Research Mode displays only provider-returned source links. It is optional and rate-limited.</p>
         </section>
 

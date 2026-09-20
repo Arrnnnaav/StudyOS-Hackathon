@@ -398,7 +398,11 @@
       try { return new URL(source && source.url).protocol === 'https:'; } catch { return false; }
     });
     if (!sources.length) return;
-    const label = result.provider === 'gemini-google-search' ? 'Gemini Google Search sources' : 'Bedrock Web Search sources';
+    const label = result.provider === 'gemini-google-search'
+      ? 'Gemini Google Search sources'
+      : result.provider === 'gemini-web-fallback'
+        ? 'Public-web fallback sources'
+        : 'Bedrock Web Search sources';
     const box = el('div', { class: 'sources' }, [label]);
     sources.forEach((source, index) => {
       box.append(el('a', { href: source.url, target: '_blank', rel: 'noopener noreferrer', title: source.title || source.url }, [`${index + 1}. ${source.title || source.url}`]));

@@ -8,7 +8,7 @@ export type ResearchResult = {
   answer: string
   sources: ResearchSource[]
   cited: string[]
-  provider: 'bedrock-web-search' | 'gemini-google-search'
+  provider: 'bedrock-web-search' | 'gemini-google-search' | 'gemini-web-fallback'
 }
 
 export type ResearchInput = {
@@ -188,6 +188,57 @@ function geminiMessage(body: Record<string, unknown>): { answer: string; citatio
   return { answer, citations: metadata?.groundingChunks ?? [] }
 }
 
+function cleanHtml(value: string): string {
+  return value
+    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function duckDuckGoUrl(href: string): string | null {
+  try {
+    const parsed = new URL(href, 'https://html.duckduckgo.com')
+    const redirected = parsed.searchParams.get('uddg')
+    return redirected ? decodeURIComponent(redirected) : parsed.toString()
+  } catch {
+    return null
+  }
+}
+
+async function duckDuckGoSources(query: string, config: ResearchConfig, fetchImpl: typeof fetch): Promise<ResearchSource[]> {
+  const response = await fetchImpl('https://html.duckduckgo.com/html/', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'LearningHQ Research/1.0' },
+    body: new URLSearchParams({ q: query.slice(0, MAX_QUESTION_CHARS), kl: 'us-en' }).toString(),
+    signal: AbortSignal.timeout(config.timeoutMs),
+  })
+  if (!response.ok) throw new ResearchProviderUnavailableError()
+  const html = await response.text()
+  const matches = [...html.matchAll(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)]
+  const candidates = matches.slice(0, MAX_SOURCES).map((match) => ({
+    url: duckDuckGoUrl(match[1]),
+    title: cleanHtml(match[2]),
+  })).filter((source): source is { url: string; title: string } => Boolean(source.url))
+  return normalizeSources(candidates)
+}
+
+function citedSources(answer: string, sources: ResearchSource[]): { answer: string; sources: ResearchSource[] } {
+  const cited = [...new Set([...answer.matchAll(/\[(\d{1,2})\]/g)].map((match) => Number(match[1])))]
+    .filter((index) => Boolean(sources[index - 1]))
+    .sort((left, right) => left - right)
+  const selected = cited.flatMap((index) => sources[index - 1] ? [sources[index - 1]] : [])
+  const renumber = new Map(cited.map((index, position) => [index, position + 1]))
+  return {
+    answer: answer.replace(/\[(\d{1,2})\]/g, (_match, value) => {
+      const replacement = renumber.get(Number(value))
+      return replacement ? `[${replacement}]` : ''
+    }).replace(/\s{2,}/g, ' ').trim(),
+    sources: selected.map((source, index) => ({ ...source, id: `source-${index + 1}` })),
+  }
+}
+
 async function requestJson(fetchImpl: typeof fetch, url: string, init: RequestInit, timeoutMs: number, retryTransient: boolean): Promise<Record<string, unknown>> {
   const attempts = retryTransient ? 2 : 1
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -246,6 +297,24 @@ async function callGemini(prompt: string, config: ResearchConfig, fetchImpl: typ
   return { answer, sources, cited: sources.map((source) => source.url) }
 }
 
+async function callGeminiWebFallback(prompt: string, query: string, config: ResearchConfig, fetchImpl: typeof fetch): Promise<Omit<ResearchResult, 'provider'>> {
+  const sources = await duckDuckGoSources(query, config, fetchImpl)
+  if (sources.length === 0) throw new ResearchUnavailableError()
+  const sourceBlock = sources.map((source, index) => `[${index + 1}] ${source.title} — ${source.url}`).join('\n')
+  const body = await requestJson(fetchImpl, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.geminiModel)}:generateContent`, {
+    method: 'POST',
+    headers: { 'x-goog-api-key': config.geminiApiKey, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: `${prompt}\n\nPublic-web search results:\n${sourceBlock}\n\nAnswer only from the supplied results. Put [1], [2], etc. after every factual claim. If the results are insufficient, say so.` }] }],
+      generationConfig: { maxOutputTokens: 1_200, temperature: 0.2 },
+    }),
+  }, config.timeoutMs, true)
+  const { answer } = geminiMessage(body)
+  const cited = citedSources(answer, sources)
+  if (!answer || cited.sources.length === 0) throw new ResearchUnavailableError()
+  return { answer: cited.answer, sources: cited.sources, cited: cited.sources.map((source) => source.url) }
+}
+
 function circuitOpen(circuit: ResearchCircuit, now: number, cooldownMs: number): boolean {
   if (!circuit.openedAt) return false
   if (now - circuit.openedAt < cooldownMs) return true
@@ -281,7 +350,13 @@ export async function research(input: ResearchInput, deps: ResearchDependencies 
       return { ...result, provider: 'gemini-google-search' }
     } catch (error) {
       if (error instanceof ResearchUnavailableError) throw error
-      throw new ResearchProviderUnavailableError()
+      try {
+        const result = await callGeminiWebFallback(prompt, input.question, config, fetchImpl)
+        return { ...result, provider: 'gemini-web-fallback' }
+      } catch (fallbackError) {
+        if (fallbackError instanceof ResearchUnavailableError) throw fallbackError
+        throw new ResearchProviderUnavailableError()
+      }
     }
   }
   throw new ResearchProviderUnavailableError()

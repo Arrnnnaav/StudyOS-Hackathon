@@ -220,7 +220,7 @@ export interface SpatialAskRequest {
   level?: string
 }
 
-export type ResearchProvider = 'bedrock-web-search' | 'gemini-google-search'
+export type ResearchProvider = 'bedrock-web-search' | 'gemini-google-search' | 'gemini-web-fallback'
 
 export interface ResearchSource {
   id: string

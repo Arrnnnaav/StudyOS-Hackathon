@@ -38,6 +38,7 @@ test('the app provides an extension privacy disclosure for Store submission', as
   assert.match(policy, /selected text/i)
   assert.match(policy, /server-side/i)
   assert.match(policy, /Gemini/i)
+  assert.match(policy, /DuckDuckGo/i)
   assert.match(policy, /Normal Ask/i)
   assert.match(policy, /previous questions and answers/i)
 })
