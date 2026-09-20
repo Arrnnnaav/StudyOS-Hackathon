@@ -49,6 +49,7 @@ test('ECS Express deployment has the required roles and server-side runtime secr
   assert.match(workflow, /task-role-arn: \$\{\{ vars\.ECS_TASK_ROLE_ARN \}\}/)
   assert.match(workflow, /vars\.RUNTIME_SECRET_ARN/)
   assert.match(workflow, /NVIDIA_NIM_API_KEY/)
+  assert.doesNotMatch(workflow, /environment: production/)
 })
 
 test('load balancer health endpoint is an unauthenticated ok route', () => {

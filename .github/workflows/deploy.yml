@@ -35,7 +35,6 @@ jobs:
     needs: validate
     if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_REGION != '' && vars.ECR_REPOSITORY != '' && vars.ECS_SERVICE != '' && vars.ECS_CLUSTER != '' && vars.ECS_TASK_EXECUTION_ROLE_ARN != '' && vars.ECS_TASK_ROLE_ARN != '' && vars.ECS_INFRASTRUCTURE_ROLE_ARN != '' && vars.RUNTIME_SECRET_ARN != '' }}
     runs-on: ubuntu-latest
-    environment: production
     permissions:
       contents: read
       id-token: write
