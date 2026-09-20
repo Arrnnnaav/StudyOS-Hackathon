@@ -1,6 +1,6 @@
 /* StudyOS extension config — edition point for api base + feature flags. */
 window.STUDYOS_SPATIAL = {
-  apiBase: (typeof window !== 'undefined' && window.__STUDYOS_API_BASE__) || 'http://localhost:3000/api',
+  apiBase: (typeof window !== 'undefined' && window.__STUDYOS_API_BASE__) || 'https://learninghq.in/api',
   productName: 'StudyOS',
   features: {
     // Hackathon scope: rectangle only. circle/pen stay off unless flipped on.

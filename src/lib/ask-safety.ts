@@ -16,14 +16,14 @@ export type StoredAskResponse = {
 
 type IdempotencyItem = {
   requestHash?: string
-  status?: 'processing' | 'completed'
-  response?: StoredAskResponse
+  status?: 'processing' | 'completed' | 'failed'
+  response?: object
   expiresAt?: number
 }
 
-export type IdempotencyResult =
-  | { state: 'reserved' }
-  | { state: 'cached'; response: StoredAskResponse }
+export type IdempotencyResult<T extends object = StoredAskResponse> =
+  | { state: 'reserved'; quotaAlreadyCharged?: boolean }
+  | { state: 'cached'; response: T }
   | { state: 'pending' }
   | { state: 'conflict' }
 
@@ -39,6 +39,7 @@ export function askRequestHash(input: {
   question: string
   context: { selected_text: string; nearby_before?: string; nearby_after?: string; domain?: string; page_title?: string }
   level?: string
+  research?: boolean
 }): string {
   const canonical = JSON.stringify({
     topicId: input.topicId,
@@ -49,6 +50,7 @@ export function askRequestHash(input: {
     domain: input.context.domain ?? '',
     page: input.context.page_title ?? '',
     level: input.level ?? 'student',
+    research: input.research === true,
   })
   return createHash('sha256').update(canonical).digest('hex')
 }
@@ -57,7 +59,7 @@ function idempotencyKey(userId: string, key: string) {
   return { PK: `USER#${userId}`, SK: `IDEMPOTENCY#${key}` }
 }
 
-export async function reserveAsk(userId: string, key: string, requestHash: string): Promise<IdempotencyResult> {
+export async function reserveAsk<T extends object = StoredAskResponse>(userId: string, key: string, requestHash: string): Promise<IdempotencyResult<T>> {
   const now = Math.floor(Date.now() / 1000)
   const expiresAt = now + Number(process.env.ASK_IDEMPOTENCY_TTL_SECONDS || DEFAULT_IDEMPOTENCY_TTL_SECONDS)
   const itemKey = idempotencyKey(userId, key)
@@ -76,7 +78,23 @@ export async function reserveAsk(userId: string, key: string, requestHash: strin
       return reserveAsk(userId, key, requestHash)
     }
     if (existing.requestHash !== requestHash) return { state: 'conflict' }
-    if (existing.status === 'completed' && existing.response) return { state: 'cached', response: existing.response }
+    if (existing.status === 'completed' && existing.response) return { state: 'cached', response: existing.response as T }
+    if (existing.status === 'failed') {
+      try {
+        await db.send(new UpdateCommand({
+          TableName: TABLES.ASK_SAFETY,
+          Key: itemKey,
+          UpdateExpression: 'SET #status = :processing, retriedAt = :now REMOVE failureCode',
+          ConditionExpression: '#status = :failed',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: { ':processing': 'processing', ':failed': 'failed', ':now': new Date().toISOString() },
+        }))
+        return { state: 'reserved', quotaAlreadyCharged: true }
+      } catch (retryError) {
+        if (!(retryError instanceof Error) || retryError.name !== 'ConditionalCheckFailedException') throw retryError
+        return { state: 'pending' }
+      }
+    }
     return { state: 'pending' }
   }
 }
@@ -87,17 +105,17 @@ export async function getReservedAsk(userId: string, key: string): Promise<Idemp
 }
 
 /** Wait briefly for a concurrent matching request instead of issuing another model call. */
-export async function waitForAskResult(userId: string, key: string, maxWaitMs = 12_000): Promise<StoredAskResponse | null> {
+export async function waitForAskResult<T extends object = StoredAskResponse>(userId: string, key: string, maxWaitMs = 12_000): Promise<T | null> {
   const deadline = Date.now() + maxWaitMs
   while (Date.now() < deadline) {
     const item = await getReservedAsk(userId, key)
-    if (item?.status === 'completed' && item.response) return item.response
+    if (item?.status === 'completed' && item.response) return item.response as T
     await new Promise((resolve) => setTimeout(resolve, 200))
   }
   return null
 }
 
-export async function completeAskReservation(userId: string, key: string, response: StoredAskResponse) {
+export async function completeAskReservation<T extends object = StoredAskResponse>(userId: string, key: string, response: T) {
   await db.send(new UpdateCommand({
     TableName: TABLES.ASK_SAFETY,
     Key: idempotencyKey(userId, key),
@@ -109,6 +127,17 @@ export async function completeAskReservation(userId: string, key: string, respon
 
 export async function abandonAskReservation(userId: string, key: string) {
   await db.send(new DeleteCommand({ TableName: TABLES.ASK_SAFETY, Key: idempotencyKey(userId, key) }))
+}
+
+/** Keeps a failed request retryable without charging its idempotent replay again. */
+export async function failAskReservation(userId: string, key: string, failureCode: string) {
+  await db.send(new UpdateCommand({
+    TableName: TABLES.ASK_SAFETY,
+    Key: idempotencyKey(userId, key),
+    UpdateExpression: 'SET #status = :failed, failureCode = :failureCode, failedAt = :now',
+    ExpressionAttributeNames: { '#status': 'status' },
+    ExpressionAttributeValues: { ':failed': 'failed', ':failureCode': failureCode, ':now': new Date().toISOString() },
+  }))
 }
 
 export async function takeDailyAskQuota(userId: string, limit = Number(process.env.ASK_DAILY_LIMIT || 20)) {
@@ -132,4 +161,8 @@ export function takeDailySpatialQuota(userId: string, limit = Number(process.env
 
 export function takeDailyCoverageQuota(userId: string, limit = Number(process.env.COVERAGE_DAILY_LIMIT || 10)) {
   return takeDailyAskQuota(`coverage:${userId}`, limit)
+}
+
+export function takeDailyResearchQuota(userId: string, limit = Number(process.env.RESEARCH_DAILY_LIMIT || 5)) {
+  return takeDailyAskQuota(`research:${userId}`, limit)
 }

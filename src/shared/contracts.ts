@@ -209,6 +209,8 @@ export interface SpatialAnchor {
 
 export interface SpatialAskRequest {
   extension_session_token?: string
+  /** Stable UUID for a single opt-in Research Mode request and its retries. */
+  idempotency_key?: string
   question: string
   marks: SpatialMark[]
   anchors: SpatialAnchor[]
@@ -218,16 +220,25 @@ export interface SpatialAskRequest {
   level?: string
 }
 
+export type ResearchProvider = 'bedrock-web-search' | 'gemini-google-search' | 'gemini-web-fallback' | 'nvidia-nim-web-fallback'
+
+export interface ResearchSource {
+  id: string
+  title: string
+  url: string
+  cited: true
+}
+
 export interface SpatialAskResponse {
   id: string
   answer: string
   anchors_used: SpatialAnchor[]
   confidence: number
-  provider: string
+  provider: 'gemini' | 'nvidia-nim' | 'bedrock' | ResearchProvider
   model: string
   vision: boolean
   ocr: boolean
-  sources?: { id: string; title: string; url: string }[]
+  sources?: ResearchSource[]
   cited?: string[]
   quota?: { signed_in: boolean; remaining: number; limit: number }
   resolved_target?: {

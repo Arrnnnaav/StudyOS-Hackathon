@@ -1,0 +1,10 @@
+.git
+.github
+.worktrees
+.next
+node_modules
+.env*
+docs
+coverage
+*.log
+extension/dist

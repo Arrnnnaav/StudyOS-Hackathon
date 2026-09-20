@@ -1,5 +1,8 @@
 // StudyOS Extension Content Script
-// Captures text selection and nearby DOM context
+// Captures text selection and nearby DOM context only after a student invokes it.
+
+if (!globalThis.__studyosContentLoaded) {
+globalThis.__studyosContentLoaded = true
 
 let selectionOverlay = null
 let isSelecting = false
@@ -134,3 +137,4 @@ if (document.readyState === 'loading') {
 }
 
 console.log('StudyOS content script loaded')
+}

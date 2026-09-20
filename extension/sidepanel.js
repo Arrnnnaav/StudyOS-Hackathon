@@ -1,6 +1,6 @@
 // StudyOS Extension Side Panel Script
 
-const API_BASE = 'http://localhost:3000/api' // Change to production URL
+const API_BASE = 'https://learninghq.in/api'
 
 // DOM Elements
 const emptyState = document.getElementById('emptyState')
@@ -29,7 +29,6 @@ const cancelPairBtn = document.getElementById('cancelPairBtn')
 const cancelPairBtn2 = document.getElementById('cancelPairBtn')
 
 const levelSelect = document.getElementById('levelSelect')
-const researchToggle = document.getElementById('researchToggle')
 
 let currentAskId = null
 let currentTopicId = null
@@ -77,7 +76,6 @@ async function loadPendingSelection() {
       const selection = result.studyos_pending_selection
       if (selection) {
         showQuestionForm(selection)
-        chrome.storage.session.remove('studyos_pending_selection')
       }
       resolve()
     })
@@ -177,7 +175,7 @@ async function apiRequest(endpoint, options = {}) {
   return response.json()
 }
 
-// Reads the SSE route without buffering the complete Bedrock answer. The same
+// Reads the SSE route without buffering the complete provider answer. The same
 // idempotency key stays in the payload, so a client retry replays—not re-bills.
 async function streamAsk(payload, onToken) {
   const token = await getExtensionToken()
@@ -310,7 +308,6 @@ async function handleAsk() {
       question,
       idempotency_key: crypto.randomUUID(),
       level: levelSelect.value,
-      research_mode: researchToggle.checked
     }
     emptyState.classList.add('hidden')
     questionForm.classList.add('hidden')
@@ -323,6 +320,7 @@ async function handleAsk() {
     
     showAnswerDisplay(response)
     questionInput.value = ''
+    chrome.storage.session.remove('studyos_pending_selection')
   } catch (error) {
     alert('Error: ' + error.message)
   } finally {

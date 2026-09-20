@@ -1,8 +1,9 @@
 // StudyOS Extension Background Script
 // Handles auth, pairing, API communication, and the spatial Point & Ask overlay.
 
-// API base: override via chrome.storage.local `studyos_api_base`, else localhost.
-const DEFAULT_API_BASE = 'http://localhost:3000/api'
+// API base: the published extension uses LearningHQ. Developers may override it
+// locally without exposing an endpoint chooser to students.
+const DEFAULT_API_BASE = 'https://learninghq.in/api'
 let API_BASE = DEFAULT_API_BASE
 async function apiBase() {
   try {
@@ -215,6 +216,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await chrome.sidePanel.open({ windowId: sender.tab?.windowId })
       sendResponse({ success: true })
     },
+    async CAPTURE_SELECTION() {
+      try {
+        const tab = sender.tab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
+        const selection = await captureSelection(tab)
+        if (!selection) return sendResponse({ ok: false, error: 'Select text on the page first.' })
+        await chrome.storage.session.set({ studyos_pending_selection: selection })
+        await chrome.sidePanel.open({ windowId: tab.windowId })
+        sendResponse({ ok: true })
+      } catch (error) {
+        sendResponse({ ok: false, error: error.message })
+      }
+    },
 
     // ---- Spatial Point & Ask (rectangle/circle/pen) ----
     async TOGGLE_SPATIAL() {
@@ -228,10 +241,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     async SPATIAL_ASK({ payload }) {
       try {
         const token = await getExtensionToken()
+        const requestPayload = {
+          ...payload,
+          research: payload?.research === true,
+          ...(payload?.idempotency_key ? { idempotency_key: payload.idempotency_key } : {}),
+        }
         const res = await fetch(`${await apiBase()}/spatial/ask`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Device-ID': await getDeviceId(), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ ...payload, extension_session_token: token })
+          body: JSON.stringify({ ...requestPayload, extension_session_token: token })
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) return sendResponse({ ok: false, code: data.error?.code, error: data.error?.message || `request failed (${res.status})` })
@@ -283,20 +301,18 @@ chrome.runtime.onInstalled.addListener(async () => {
 // Handle context menu click
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'studyos-ask' && info.selectionText) {
-    // Open side panel with selection
+    const selection = await captureSelection(tab)
+    if (selection) await chrome.storage.session.set({ studyos_pending_selection: selection })
     await chrome.sidePanel.open({ windowId: tab.windowId })
-    
-    // Send selection to side panel
-    chrome.runtime.sendMessage({
-      type: 'SELECTION_CAPTURED',
-      data: {
-        selectedText: info.selectionText,
-        pageUrl: tab.url,
-        pageTitle: tab.title
-      }
-    })
   }
 })
+
+async function captureSelection(tab) {
+  if (!tab || tab.id == null) return null
+  const [{ result: loaded } = {}] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => Boolean(globalThis.__studyosContentLoaded) })
+  if (!loaded) await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] })
+  return chrome.tabs.sendMessage(tab.id, { type: 'GET_SELECTION' })
+}
 
 // ---- Spatial Point & Ask: Alt+Shift+A injection + API proxy ----
 chrome.commands.onCommand.addListener(async (command, tab) => {
