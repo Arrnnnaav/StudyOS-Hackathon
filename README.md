@@ -2,102 +2,141 @@
 
 > Know what to learn today. Understand what stops you. Remember what matters.
 
-StudyOS is a learning workflow for engineering students: choose a track, get a prerequisite-aware next action, ask a grounded question about selected code or text, and save the answer for spaced review.
+[Open the live demo](https://le-eee1a14046a44cd1b2f9d6fe82789fda.ecs.us-east-1.on.aws/) · [Chrome Point & Ask extension](extension/) · [Demo video](#three-minute-demo-storyboard)
+
+StudyOS is a learning workflow for engineering students. It gives each learner one prerequisite-aware next action, lets them ask about the exact code or text that confused them, and turns useful answers into spaced reviews.
+
+## The problem
+
+Students lose momentum when three things happen at once:
+
+1. They do not know what to learn next.
+2. They encounter confusing code or documentation away from their learning dashboard.
+3. Helpful explanations disappear instead of becoming material they can revisit.
+
+StudyOS connects those moments into one workflow: **Today → Point & Ask → Save to Review**.
 
 ## What is built
 
-- Google OAuth through NextAuth, with DynamoDB-backed user data and anonymous-device adoption after sign-in.
-- A DSA Foundations track: 14 topics, curated watch/read/practice resources, prerequisite-aware Today view, topic progress, custom topics, and per-topic quizzes.
-- A Chrome MV3 side panel with pairing, text selection, and rectangle-based spatial Point & Ask (`Alt` + `Shift` + `A`). It sends selected/nearby context, never a full page or screenshot by default.
-- Grounded Bedrock answers, helpful/not-helpful feedback, saved review cards, and Again/Good spaced-repetition scheduling.
-- Resource Coverage Lite, event tracking, and an operator overview.
-- A safe Ask pipeline: idempotency, daily per-user quota, streaming, short conversation context, and model routing.
-- A three-level organization hierarchy: bootstrapped Master Admins, scoped Organization Admins, and Students. Admins can invite/manage one cohort, publish structured topics, and see only organization-assignment progress.
+| Capability | What the student sees |
+|---|---|
+| **Today** | A prerequisite-aware next topic from the DSA Foundations curriculum, with progress and review priority. |
+| **Point & Ask** | Select code or text in Chrome, ask a question, receive a context-grounded explanation, and provide feedback. |
+| **Spatial Point & Ask** | Press `Alt + Shift + A` or use the extension button, box a visual region, and ask about the resolved DOM object and nearby context. |
+| **Spaced review** | Save a helpful answer to Review, then use Again or Good to schedule the next repetition. |
+| **Organizations** | Master Admin, Organization Admin, and Student roles with scoped content, invites, and cohort progress. |
+| **Safety controls** | Per-user quotas, idempotency keys, durable request state, bounded context, and server-side AI credentials. |
 
-## Demo flow
+## Live demo
 
-1. Sign in with Google and choose Year 2 / DSA Foundations.
-2. Open **Today** and begin the next prerequisite-ready topic.
-3. On a page containing code or study material, press `Alt` + `Shift` + `A`, draw a rectangle, and ask a question.
-4. Watch the grounded answer stream into the extension side panel.
-5. Mark it helpful and save it to the review queue.
-6. Complete the review with Again or Good to schedule the next repetition.
+1. Open the [public demo](https://le-eee1a14046a44cd1b2f9d6fe82789fda.ecs.us-east-1.on.aws/).
+2. Choose **Open Student Demo** → **Open Student Dashboard**. No Google account or onboarding is required.
+3. Use **Settings** to generate a one-time extension pairing code.
+4. In the extension, choose **Pair extension with StudyOS**, enter the code, then connect.
+5. Select text for Point & Ask, or use **Circle & Ask** / `Alt + Shift + A` to box an area for Spatial Point & Ask.
+6. Mark a useful answer Helpful and save it to Review.
+
+> The extension sends the selected text, the resolved target, nearby context, basic page metadata, and the student’s question only after the student invokes Ask. It does not send a full webpage or full screenshot by default.
 
 ## Architecture
 
-### Production path — one backend story
+```mermaid
+flowchart LR
+  Student[Student in browser] --> Web[StudyOS web app]
+  Student --> Extension[Chrome MV3 Point & Ask extension]
+  Extension --> Web
 
-```text
-Web app / Chrome extension
-          |
-          v
-AWS App Runner — Next.js 16 route handlers
-  |       |             |
-  |       |             +--> Amazon Bedrock
-  |       +----------------> DynamoDB
-  +------------------------> S3 private crop storage
-                              |
-                              v
-                         CloudWatch logs
+  Web --> ECS[AWS ECS Express Mode\nNext.js 16 container]
+  ECS --> DDB[(Amazon DynamoDB\nprofiles, progress, asks, reviews, pairing)]
+  ECS --> S3[(Amazon S3\nprivate spatial crops, 7-day lifecycle)]
+  ECS --> Secrets[AWS Secrets Manager\nruntime secrets]
+  ECS --> AI[Server-side AI provider\nGemini with NVIDIA NIM fallback]
+  ECS --> Logs[Amazon CloudWatch Logs]
+
+  GitHub[GitHub Actions] -->|OIDC short-lived role| IAM[AWS IAM]
+  GitHub -->|build and push image| ECR[Amazon ECR]
+  ECR --> ECS
 ```
 
-The real production API is the Next.js route-handler layer. There is no API Gateway or Lambda proxy in the request path. The extension calls the same `/api/*` endpoints as the web app.
-
-**Hosting decision:** the repository uses Next.js `16.3.5`, so the Ship It target is **AWS App Runner on Node.js 22**. `apprunner.yaml` is the source-repository deployment configuration. Amplify is not the target for this branch because its published Next.js SSR compatibility documentation currently stops at v15.
-
-### AWS resources
-
-| Service | Role in StudyOS |
-|---|---|
-| App Runner | Hosts the Next.js 16 app and route handlers |
-| DynamoDB | Users, progress, asks, reviews, events, extension pairing, Ask safety state, and organization membership/content |
-| Bedrock | Claude 3.5 Haiku for Ask; Claude Sonnet 4.5 for Coverage Lite |
-| S3 | Private Point & Ask crop storage with a seven-day lifecycle |
-| CloudWatch | Application and deployment observability |
-| IAM | Temporary credentials for the running App Runner service |
-| Cognito | User pool provisioned by the stack for AWS-native identity evolution; the current web sign-in flow is Google OAuth through NextAuth |
-
-`infra/template.yaml` provisions nine DynamoDB tables, including `StudyOSOrganizations`. `AppRunnerInstanceRoleArn` is attached to the App Runner service, so the application receives temporary AWS credentials; never place AWS access keys in App Runner environment variables.
-
-## Organization administration
-
-Roles are intentionally small and explicit:
-
-| Role | Scope |
-|---|---|
-| Master Admin | Exact email allowlist in `MASTER_ADMIN_EMAILS`; creates organizations, appoints organization admins, can inspect all organization-only cohort progress, and can unpublish content. |
-| Organization Admin | One organization; creates copyable student invites or rotating join codes, removes students, publishes topics, and sees only assigned-topic completion/active counts. |
-| Student | At most one active organization; accepts one invite or join code, sees published library topics, and receives the next published assigned topic in **Today**. |
-
-Organizations use signed single-use invite tokens (seven-day expiry) or rotating join codes; no outbound email service is required. Removing a student removes organization access but leaves that student’s personal learning history intact. Structured topics include description, objectives, estimated time, optional watch/read/practice resources, and a `library` or `assigned` delivery mode. Privileged organization actions are recorded as product audit events.
-
-Set the master allowlist before deploying:
+### Request path
 
 ```text
-MASTER_ADMIN_EMAILS=owner@example.com,another-owner@example.com
+Browser or Chrome extension
+        ↓ HTTPS
+ECS Express service running Next.js route handlers
+        ├── DynamoDB: durable product state
+        ├── S3: optional private Point & Ask crops
+        ├── Secrets Manager: injected runtime configuration
+        ├── Gemini / NVIDIA NIM: server-side answer generation
+        └── CloudWatch: logs and operational visibility
 ```
 
-Do not use a company domain as an authorization rule. The future/enterprise ideas intentionally deferred from this hackathon scope are in [`docs/roadmaps/admin-hierarchy-future.md`](docs/roadmaps/admin-hierarchy-future.md).
+There is no API Gateway or Lambda proxy in the live request path. Both the dashboard and the Chrome extension call the same Next.js `/api/*` route handlers.
 
-## Ask reliability and cost controls
+## How AWS is used
 
-| Control | Behaviour |
+| AWS service | How StudyOS uses it |
 |---|---|
-| Idempotency | `/api/ask` and `/api/ask/stream` require an `Idempotency-Key` header or `idempotency_key` body value. Same request replays the stored answer; reused keys with different payloads return `409`. |
-| Durable state | `StudyOSAskSafety` stores processing/completed requests and expires them by DynamoDB TTL. |
-| Rate limit | Each user gets `ASK_DAILY_LIMIT` model-backed asks per UTC day (default `20`). Over-limit calls receive `429` and `Retry-After`. |
-| Streaming | `/api/ask/stream` emits Server-Sent Events: `ready`, `token`, `complete`, and `error`. |
-| Context | At most two prior asks from the same user, topic, and domain are included. Selected context remains primary. |
-| Model routing | Point & Ask uses `anthropic.claude-3-5-haiku-20241022-v1:0`; Coverage Lite uses `global.anthropic.claude-sonnet-4-5-20250929-v1:0`. Both are environment-overridable. |
+| **Amazon ECS Express Mode** | Runs the containerized Next.js 16 application, performs service health checks on `/api/health`, and exposes the public application URL. |
+| **Amazon ECR** | Stores the immutable Docker image built from every `main` branch deployment. |
+| **Amazon DynamoDB** | Stores users, learning progress, questions, reviews, events, extension tokens, pairing codes, Ask safety state, and organization data. Tables use on-demand billing; safety and organization records use TTL where appropriate. |
+| **AWS Secrets Manager** | Holds runtime secrets such as Auth.js configuration and the server-only AI provider key. The extension never receives these values. |
+| **AWS IAM + GitHub OIDC** | GitHub Actions assumes a tightly scoped, short-lived deploy role to push to ECR and update ECS. ECS uses separate execution, application, and infrastructure roles. |
+| **Amazon S3** | Supports private Point & Ask region crops with public access blocked and a seven-day lifecycle rule. |
+| **Amazon CloudWatch Logs** | Supports operational troubleshooting and deployment visibility. |
+| **Amazon Bedrock and Cognito** | Provisioned in the infrastructure template for AWS-native evolution; live answer generation is intentionally provider-routed through Gemini with NVIDIA NIM fallback until Bedrock access is verified for the account. |
+
+## Delivery pipeline
+
+```mermaid
+sequenceDiagram
+  participant Dev as Developer
+  participant GH as GitHub Actions
+  participant IAM as AWS IAM / OIDC
+  participant ECR as Amazon ECR
+  participant ECS as ECS Express
+
+  Dev->>GH: Push to main
+  GH->>GH: Test, type-check, production build
+  GH->>IAM: Request short-lived OIDC credentials
+  IAM-->>GH: Scoped deployment session
+  GH->>ECR: Build and push Docker image
+  GH->>ECS: Deploy image and wait for health
+  ECS-->>GH: Deployment status
+```
+
+The workflow validates the project before deployment, so a failed test, type check, or production build does not reach ECS.
+
+## Security and privacy
+
+- The public hackathon demo offers separate Student and Master Admin demo entry points; it is demonstration data, not a private production tenant.
+- Master Admin authorization uses an exact configured email allowlist—never a domain-based guess.
+- Extension pairing uses a short-lived, single-use code and an expiring extension token.
+- AI keys, Auth.js secrets, and AWS credentials remain server-side. Do not put secrets in the extension, Git, screenshots, or the demo video.
+- Ask endpoints use idempotency keys, per-user daily limits, and durable request-safety records to prevent accidental duplicate AI work.
+
+## Three-minute demo storyboard
+
+| Time | Show | Key message |
+|---|---|---|
+| 0:00–0:20 | Landing page → Student Dashboard | StudyOS tells a student what to learn next. |
+| 0:20–0:50 | Today and a topic | The curriculum respects prerequisites and prioritizes due reviews. |
+| 0:50–1:25 | Point & Ask on selected code/text | The learner asks about the exact confusing context. |
+| 1:25–1:50 | Spatial Point & Ask | A boxed region resolves to a DOM target; no full page is sent by default. |
+| 1:50–2:10 | Helpful → Save to Review | Questions become repeatable learning evidence. |
+| 2:10–2:45 | ECS, ECR, GitHub Actions, DynamoDB | AWS hosts the app, stores durable state, and deploys through OIDC. |
+| 2:45–3:00 | Working student dashboard | StudyOS closes the loop between confusion and learning progress. |
+
+Do not record API keys, secret values, pairing codes, or the AWS Secrets Manager value view.
 
 ## Local development
 
 ### Prerequisites
 
-- Node.js 20+
-- pnpm 12 (Corepack is supported)
+- Node.js 22+
+- pnpm 12
 - Docker for DynamoDB Local
-- A Google OAuth client for full sign-in testing
+- A server-side Gemini or NVIDIA NIM API key to generate live answers locally
 
 ```powershell
 git clone https://github.com/Arrnnnaav/StudyOS-Hackathon.git
@@ -114,127 +153,40 @@ node scripts/create-tables.mjs
 pnpm dev
 ```
 
-Open `http://localhost:3000`. To load the extension, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select `extension/`.
+Open `http://localhost:3000`. For local extension development, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the [`extension/`](extension/) folder.
 
-For local DynamoDB only, set dummy AWS SDK credentials in `.env.local`; App Runner must use its instance role instead.
+## Configuration notes
 
-## Deploy to AWS App Runner
-
-### 1. Prepare AWS access
-
-Do not share credentials in chat or commit them. Use AWS IAM Identity Center or another short-lived deployment role. The deployer needs permission to create the resources in `infra/template.yaml` (CloudFormation/SAM, IAM, DynamoDB, S3, Cognito, CloudWatch, and App Runner) and to enable the selected Bedrock models.
-
-In Amazon Bedrock → Model catalog, enable access to the Ask and Coverage models for the chosen region. Use the same region for the SAM stack, App Runner service, and Bedrock configuration.
-
-### 2. Deploy the infrastructure
-
-```powershell
-cd infra
-sam build
-sam deploy --guided --capabilities CAPABILITY_NAMED_IAM
-```
-
-Record the `AppRunnerInstanceRoleArn` stack output. This repository cannot claim a deployed URL until this command succeeds with your AWS account.
-
-### 3. Create the App Runner service
-
-1. App Runner console → **Create service** → **Source code repository** → select this repository.
-2. Choose **Configuration source: Repository**. App Runner reads `apprunner.yaml` from the repository root.
-3. Attach `AppRunnerInstanceRoleArn` as the service **instance role**.
-4. Add the runtime variables below; store secrets in App Runner/Secrets Manager.
-5. Deploy, then point the Chrome extension API base URL at the resulting App Runner URL.
+The live ECS task receives non-sensitive runtime settings as environment variables and sensitive values from AWS Secrets Manager. The AI provider must be configured server-side before Ask can generate an answer:
 
 ```text
-AWS_REGION=<same region as the SAM stack>
-AUTH_TRUST_HOST=true
-NEXTAUTH_URL=https://<app-runner-service-url>
-NEXTAUTH_SECRET=<new random 32-byte secret>
-GOOGLE_CLIENT_ID=<Google OAuth client ID>
-GOOGLE_CLIENT_SECRET=<Google OAuth client secret>
-BEDROCK_ASK_MODEL_ID=anthropic.claude-3-5-haiku-20241022-v1:0
-BEDROCK_COVERAGE_MODEL_ID=global.anthropic.claude-sonnet-4-5-20250929-v1:0
-ASK_DAILY_LIMIT=20
-ASK_IDEMPOTENCY_TTL_SECONDS=86400
-MASTER_ADMIN_EMAILS=<comma-separated exact admin emails>
+NVIDIA_NIM_API_KEY=<server-only NVIDIA NIM key>
+# or
+GEMINI_API_KEY=<server-only Gemini key>
 ```
 
-Add this Google OAuth redirect URI after the App Runner URL exists:
-
-```text
-https://<app-runner-service-url>/api/auth/callback/google
-```
-
-Do **not** configure `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` in App Runner. The instance role provides temporary credentials to the AWS SDK.
-
-## API surface
-
-| Route group | Purpose |
-|---|---|
-| `/api/ask`, `/api/ask/stream` | Contextual Ask with durable replay, quota, streaming, persistence, and model routing |
-| `/api/spatial/ask` | Rectangle/anchor-based Point & Ask resolution |
-| `/api/ask/feedback`, `/api/ask/save-review` | Feedback and spaced-review conversion |
-| `/api/coverage/check` | Coverage Lite analysis |
-| `/api/progress`, `/api/reviews`, `/api/topics/*` | Learning progress, reviews, quiz evidence, and custom topics |
-| `/api/extension/*` | Pairing, token flow, and crop upload |
-| `/api/events`, `/api/operator/overview` | Product events and operator reporting |
-| `/api/organization`, `/api/admin/organizations/*` | Organization join context, master/org-admin management, invites, join codes, publishing, and scoped cohort progress |
+Never add either value to `extension/`, browser local storage, the README, or a Git commit.
 
 ## Quality checks
 
 ```powershell
-pnpm exec tsc --noEmit
 pnpm test
-pnpm lint
+pnpm exec tsc --noEmit
 pnpm build
-
-# Requires DynamoDB Local on port 8001 and a running app on port 3000
-node scripts/e2e-features.mjs
 ```
-
-Latest local verification:
-
-| Check | Result |
-|---|---|
-| TypeScript | Pass |
-| Shared unit tests | 37/37 pass |
-| Production build | Pass; includes `/api/ask/stream` |
-| Local E2E | Pass; page/API auth checks, idempotency replay, daily quota, organization invite/join/publish flow, custom topics, reviews, adoption, quiz, and coverage |
-| ESLint | Exit code 0; legacy warning cleanup remains |
-
-## Scaling plan toward 10K MAU
-
-The application should keep AI endpoints in Next.js route handlers on App Runner initially. Moving them to Lambda/API Gateway is not a near-term scaling requirement.
-
-1. Replace operator analytics scans with access-pattern-specific DynamoDB GSIs and `Query` operations.
-2. Pre-aggregate analytics asynchronously from events (DynamoDB Streams first; SQS/EventBridge only when independent buffering or fan-out is needed).
-3. Add Bedrock bounded retries, timeouts, a circuit breaker, alarms, and quota monitoring before launch.
-4. Cache stable curriculum, coverage, and quiz work selectively; do not expect high cache hits for unique Ask requests.
-5. Load test realistic streaming traffic, starting at 100 concurrent clients and progressing to 500. Tune App Runner maximum concurrency and instance limits from observed P95 latency and Bedrock quota behaviour.
-
-Do not add Kinesis, ClickHouse, OpenSearch, AppSync, multi-region deployment, or a Lambda migration until measurements show a concrete need.
 
 ## Project layout
 
 ```text
-src/app/api/             Next.js route handlers
+src/app/                 Next.js pages and route handlers
 src/app/dashboard/       Student learning experience
-src/components/          UI and learning widgets
-src/data/                DSA curriculum
-src/lib/                 Bedrock, DynamoDB, auth, S3, and Ask safety modules
-src/shared/              Contracts and testable algorithms
-extension/               Chrome MV3 extension
-infra/template.yaml      SAM infrastructure stack
-apprunner.yaml           App Runner source-deployment configuration
-scripts/                 DynamoDB Local setup and E2E verification
+src/app/api/             Product API surface
+src/lib/                 DynamoDB, AI, auth, S3, pairing, and safety logic
+src/shared/              Testable learning, security, and resolver logic
+extension/               Chrome MV3 Point & Ask extension
+infra/template.yaml      CloudFormation/SAM AWS resources and IAM roles
+.github/workflows/       OIDC-backed test, build, ECR, and ECS delivery pipeline
 ```
-
-## Hackathon tracks
-
-| Track | Evidence |
-|---|---|
-| Ship It | App Runner-ready Next.js 16 app, SAM AWS stack, Bedrock, DynamoDB, S3, and CloudWatch |
-| Build It | Local Next.js + DynamoDB Local setup and E2E script |
-| Best UI | Responsive learning dashboard and spatial Chrome extension workflow |
 
 ## License
 
