@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { dsaFoundations } from '@/data/dsa-curriculum'
 import { auth } from '@/lib/auth'
 import { takeDailyCoverageQuota } from '@/lib/ask-safety'
-import { invokeModel, extractJson, bedrockConfigured, BedrockUnavailableError, COVERAGE_MODEL_ID } from '@/lib/bedrock'
+import { generateText, parseJson } from '@/lib/ai'
 import { classifyCoverage, overallStatus } from '@/shared/coverage'
 import type { CoverageCheckRequest, CoverageCheckResponse, CoverageStatus } from '@/shared/contracts'
 import { errorBody } from '@/shared/contracts'
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
       })
     }
     let coverage: { objective: string; status: CoverageStatus; reason: string }[]
-    try { coverage = await bedrockCoverage(topic.objectives, content) }
+    try { coverage = await aiCoverage(topic.objectives, content) }
     catch { coverage = topic.objectives.map((objective, index) => ({ objective, ...classifyCoverage(topic.objectives, content)[index] })) }
     const response: CoverageCheckResponse = { topic_id: topicId, topic_title: topic.title, coverage, overall: overallStatus(coverage.map((item) => item.status)) }
     return NextResponse.json(response, { headers: { 'X-RateLimit-Limit': String(quota.limit), 'X-RateLimit-Remaining': String(Math.max(0, quota.limit - quota.count)) } })
@@ -42,11 +42,10 @@ export async function POST(request: Request) {
   }
 }
 
-async function bedrockCoverage(objectives: string[], content: string): Promise<{ objective: string; status: CoverageStatus; reason: string }[]> {
-  if (!bedrockConfigured()) throw new BedrockUnavailableError()
+async function aiCoverage(objectives: string[], content: string): Promise<{ objective: string; status: CoverageStatus; reason: string }[]> {
   const system = 'Evaluate whether a learning resource covers each objective. Return only JSON: {"coverage":[{"objective":"<exact objective>","status":"strong|moderate|weak|missing","reason":"<one short sentence>"}]}. Use exactly the supplied objectives.'
-  const raw = await invokeModel({ system, user: `Topic objectives:\n${JSON.stringify(objectives)}\n\nResource content:\n${content.slice(0, MAX_CONTENT)}`, maxTokens: 1_500, temperature: 0, modelId: COVERAGE_MODEL_ID })
-  const parsed = extractJson<{ coverage?: { objective?: string; status?: string; reason?: string }[] }>(raw)
+  const { text: raw } = await generateText({ system, user: `Topic objectives:\n${JSON.stringify(objectives)}\n\nResource content:\n${content.slice(0, MAX_CONTENT)}`, maxTokens: 1_500, temperature: 0 })
+  const parsed = parseJson<{ coverage?: { objective?: string; status?: string; reason?: string }[] }>(raw)
   if (!Array.isArray(parsed?.coverage) || parsed.coverage.length !== objectives.length) throw new Error('Coverage JSON did not match objectives')
   const statuses = new Set<CoverageStatus>(['strong', 'moderate', 'weak', 'missing'])
   return objectives.map((objective, index) => ({ objective, status: statuses.has(parsed.coverage![index]?.status as CoverageStatus) ? parsed.coverage![index]!.status as CoverageStatus : 'missing', reason: parsed.coverage![index]?.reason || 'No explicit coverage found.' }))

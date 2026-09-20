@@ -2,7 +2,7 @@
   "name": "StudyOS - Point & Ask",
   "version": "0.2.0",
   "manifest_version": 3,
-  "description": "Circle or select any code or text, ask a question, get a grounded explanation from AWS Bedrock. Save to review queue.",
+  "description": "Circle or select any code or text, ask a question, get a grounded explanation, and save it to your review queue.",
   "permissions": [
     "activeTab",
     "contextMenus",

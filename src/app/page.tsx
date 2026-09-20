@@ -65,7 +65,7 @@ export default function LandingPage() {
                 <Zap className="h-10 w-10 text-emerald-600 dark:text-emerald-400 mb-2" />
                 <CardTitle>Point & Ask when something is confusing</CardTitle>
                 <CardDescription>
-                  Select any code or text on GitHub, LeetCode, docs. Get a grounded explanation from AWS Bedrock with citations.
+                  Select any code or text on GitHub, LeetCode, or docs. Get a context-grounded explanation; opt into public-web research when you need cited current sources.
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -91,11 +91,11 @@ export default function LandingPage() {
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-6 max-w-4xl mx-auto">
             {[
-              { name: 'App Runner', desc: 'Hosting' },
+              { name: 'ECS', desc: 'Hosting' },
               { name: 'Google OAuth', desc: 'Sign-in' },
               { name: 'Next.js', desc: 'API' },
               { name: 'DynamoDB', desc: 'State' },
-              { name: 'Bedrock', desc: 'AI' },
+              { name: 'IAM', desc: 'Access' },
               { name: 'S3', desc: 'Private crops' },
               { name: 'CloudWatch', desc: 'Observability' }
             ].map(({ name, desc }) => (
@@ -117,6 +117,7 @@ export default function LandingPage() {
           <p className="text-neutral-600 dark:text-neutral-400 mb-8">
             Join 500+ engineering students who get a daily study plan that actually works.
           </p>
+          <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400"><Link href="/privacy" className="underline underline-offset-4">Privacy</Link></p>
           <Link href="/auth/signin">
             <Button size="lg" className="gap-2">
               Start Free — No Card Required

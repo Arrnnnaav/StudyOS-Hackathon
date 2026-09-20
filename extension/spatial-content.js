@@ -97,7 +97,7 @@
     }
     toolbar = el('div', { class: 'toolbar' }, [
       ...tools, el('span', { class: 'sep' }),
-      el('button', { onclick: () => { state.marks = []; while (svg.firstChild) svg.removeChild(svg.firstChild); if (panel) { panel.remove(); panel = null; } } }, ['Clear']),
+      el('button', { onclick: () => { state.marks = []; state.research = false; while (svg.firstChild) svg.removeChild(svg.firstChild); if (panel) { panel.remove(); panel = null; } } }, ['Clear']),
       el('button', { onclick: close }, ['Done (Esc)']),
     ]);
     hint = el('div', { style: 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:rgba(17,24,39,.9);color:#fff;padding:8px 14px;border-radius:10px;font:13px/1.3 system-ui;z-index:2147483647' },

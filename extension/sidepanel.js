@@ -175,7 +175,7 @@ async function apiRequest(endpoint, options = {}) {
   return response.json()
 }
 
-// Reads the SSE route without buffering the complete Bedrock answer. The same
+// Reads the SSE route without buffering the complete provider answer. The same
 // idempotency key stays in the payload, so a client retry replays—not re-bills.
 async function streamAsk(payload, onToken) {
   const token = await getExtensionToken()

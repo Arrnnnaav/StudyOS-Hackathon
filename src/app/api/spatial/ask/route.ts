@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { resolveApiUser } from '@/lib/auth-utils'
 import { abandonAskReservation, askRequestHash, completeAskReservation, failAskReservation, reserveAsk, takeDailyResearchQuota, takeDailySpatialQuota, waitForAskResult } from '@/lib/ask-safety'
 import { createAsk, trackEvent } from '@/lib/db'
-import { invokeModel, MODEL_ID } from '@/lib/bedrock'
+import { GEMINI_MODEL, generateText } from '@/lib/ai'
 import { research } from '@/lib/research'
 import { anchorsToContext } from '@/shared/spatial'
 import { resolve, describeTarget } from '@/shared/resolver'
@@ -167,10 +167,10 @@ export async function POST(request: Request) {
     })
 
     let answer: string
-    let provider: 'bedrock'
+    let provider: 'gemini'
     try {
-      answer = await invokeModel({ system: RESOLVED_SYSTEM, user: prompt, maxTokens: 900, temperature: 0.3 })
-      provider = 'bedrock'
+      answer = (await generateText({ system: RESOLVED_SYSTEM, user: prompt, maxTokens: 900, temperature: 0.3 })).text
+      provider = 'gemini'
     } catch {
       void trackEvent({
         eventId: crypto.randomUUID(),
@@ -198,7 +198,7 @@ export async function POST(request: Request) {
       nearbyAfter: '',
       question,
       answer,
-      model: MODEL_ID,
+      model: GEMINI_MODEL,
       latencyMs,
       helpful: null,
       feedbackReason: null,
@@ -227,7 +227,7 @@ export async function POST(request: Request) {
       anchors_used: (chosen ? [chosen] : []) as SpatialAnchor[],
       confidence: confidenceToNum(target.confidence),
       provider,
-      model: MODEL_ID,
+      model: GEMINI_MODEL,
       vision: false,
       ocr: false,
       sources: undefined,

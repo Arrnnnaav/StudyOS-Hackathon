@@ -234,7 +234,7 @@ export interface SpatialAskResponse {
   answer: string
   anchors_used: SpatialAnchor[]
   confidence: number
-  provider: 'bedrock' | ResearchProvider
+  provider: 'gemini' | 'bedrock' | ResearchProvider
   model: string
   vision: boolean
   ocr: boolean

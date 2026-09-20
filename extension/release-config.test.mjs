@@ -32,3 +32,8 @@ test('student setup does not depend on a source folder or remotely hosted extens
   assert.doesNotMatch(spatialContent, /localhost:3000/)
   assert.match(spatialContent, /Gemini Google Search/)
 })
+
+test('clearing a spatial selection also resets opt-in research mode', () => {
+  const spatialContent = extensionFile('spatial-content.js')
+  assert.match(spatialContent, /onclick:\s*\(\)\s*=>\s*\{\s*state\.marks\s*=\s*\[\];\s*state\.research\s*=\s*false;/)
+})

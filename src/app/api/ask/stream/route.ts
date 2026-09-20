@@ -1,4 +1,4 @@
-import { ASK_MODEL_ID, streamModel } from '@/lib/bedrock'
+import { GEMINI_MODEL, streamText } from '@/lib/ai'
 import { getAskContext } from '@/lib/db'
 import { abandonAskReservation, askRequestHash, completeAskReservation, parseIdempotencyKey, reserveAsk, takeDailyAskQuota, waitForAskResult } from '@/lib/ask-safety'
 import { resolveApiUser } from '@/lib/auth-utils'
@@ -45,10 +45,10 @@ export async function POST(request: Request) {
         const started = Date.now()
         let answer = ''
         try {
-          controller.enqueue(sse('ready', { model: ASK_MODEL_ID, replayed: false }))
+          controller.enqueue(sse('ready', { model: GEMINI_MODEL, replayed: false }))
           const history = await getAskContext(user.userId, parsed.topicId, parsed.context.domain, 2)
           const prompt = buildAskPrompt(parsed.context, parsed.question, history)
-          for await (const delta of streamModel({ system: askSystemPrompt(body.level), user: prompt, maxTokens: 1_000, temperature: 0.3, modelId: ASK_MODEL_ID })) {
+          for await (const delta of streamText({ system: askSystemPrompt(body.level), user: prompt, maxTokens: 1_000, temperature: 0.3 })) {
             answer += delta
             controller.enqueue(sse('token', { delta }))
           }
