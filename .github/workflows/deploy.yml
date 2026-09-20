@@ -49,6 +49,18 @@ jobs:
       RUNTIME_SECRET_ARN: ${{ vars.RUNTIME_SECRET_ARN }}
     steps:
       - uses: actions/checkout@v4
+      - name: OIDC token claims (safe diagnostic)
+        shell: bash
+        run: |
+          node <<'NODE'
+          const response = await fetch(`${process.env.ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com`, {
+            headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+          })
+          if (!response.ok) throw new Error(`Unable to request OIDC token: ${response.status}`)
+          const { value } = await response.json()
+          const claims = JSON.parse(Buffer.from(value.split('.')[1], 'base64url').toString('utf8'))
+          console.log(`OIDC token claims: aud=${claims.aud}; sub=${claims.sub}`)
+          NODE
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
