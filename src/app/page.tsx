@@ -33,7 +33,7 @@ export default function LandingPage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link href="/auth/signin">
               <Button size="lg" className="w-full sm:w-auto gap-2">
-                Start DSA Foundations
+                Open Live Demo
                 <ArrowRight className="h-5 w-5" />
               </Button>
             </Link>
@@ -92,7 +92,7 @@ export default function LandingPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-6 max-w-4xl mx-auto">
             {[
               { name: 'ECS', desc: 'Hosting' },
-              { name: 'Google OAuth', desc: 'Sign-in' },
+              { name: 'Public Demo', desc: 'No signup' },
               { name: 'Next.js', desc: 'API' },
               { name: 'DynamoDB', desc: 'State' },
               { name: 'IAM', desc: 'Access' },
@@ -115,12 +115,12 @@ export default function LandingPage() {
             Ready to stop wondering what to study?
           </h2>
           <p className="text-neutral-600 dark:text-neutral-400 mb-8">
-            Join 500+ engineering students who get a daily study plan that actually works.
+            Explore the student and master experiences without creating an account.
           </p>
           <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400"><Link href="/privacy" className="underline underline-offset-4">Privacy</Link></p>
           <Link href="/auth/signin">
             <Button size="lg" className="gap-2">
-              Start Free — No Card Required
+              Enter Live Demo
               <ArrowRight className="h-5 w-5" />
             </Button>
           </Link>

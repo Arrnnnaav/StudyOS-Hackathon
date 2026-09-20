@@ -8,7 +8,7 @@ export async function currentOrganizationActor(): Promise<{ userId: string; acto
   const membership = await getOrganizationMembership(session.user.id)
   return {
     userId: session.user.id,
-    actor: actorFromIdentity(session.user.email, process.env.MASTER_ADMIN_EMAILS || '', membership),
+    actor: actorFromIdentity(session.user.email, process.env.MASTER_ADMIN_EMAILS || process.env.MASTER_ADMIN_EMAIL || '', membership),
   }
 }
 

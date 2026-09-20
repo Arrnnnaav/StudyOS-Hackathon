@@ -1,10 +1,10 @@
 import NextAuth from 'next-auth'
-import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { DynamoDBAdapter } from '@auth/dynamodb-adapter'
 import { db } from './db'
 import { TABLES } from './db'
 import { asAuthDynamoClient } from './auth-dynamodb-client'
+import { resolvePublicDemoMaster } from '@/shared/demo-auth'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // Required for a reverse proxy such as Amplify and for local `next start`.
@@ -17,20 +17,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     sortKey: 'SK'
   }),
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!
-    }),
     CredentialsProvider({
-      name: 'credentials',
+      name: 'Live demo',
       credentials: {
-        email: { label: 'Email', type: 'email' },
-        password: { label: 'Password', type: 'password' }
+        access: { label: 'Demo access', type: 'hidden' },
       },
       async authorize(credentials) {
-        // For hackathon, we'll use Google OAuth primarily
-        // This is a placeholder for email/password if needed
-        return null
+        return resolvePublicDemoMaster(credentials, process.env.MASTER_ADMIN_EMAIL || process.env.MASTER_ADMIN_EMAILS)
       }
     })
   ],

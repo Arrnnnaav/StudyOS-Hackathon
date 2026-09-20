@@ -4,7 +4,7 @@ import { signIn } from 'next-auth/react'
 import { Suspense, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { ArrowRight, Globe } from 'lucide-react'
+import { ArrowRight, Play } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 
 export default function SignInPage() {
@@ -21,13 +21,13 @@ function SignInForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const handleGoogleSignIn = async () => {
+  const handleDemoAccess = async () => {
     setIsLoading(true)
     setError('')
     try {
-      await signIn('google', { callbackUrl })
+      await signIn('credentials', { access: 'public-demo', callbackUrl })
     } catch (err) {
-      setError('Failed to sign in with Google')
+      setError('Unable to open the live demo')
       setIsLoading(false)
     }
   }
@@ -39,27 +39,22 @@ function SignInForm() {
           <div className="flex justify-center mb-4">
             <span className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">StudyOS</span>
           </div>
-          <CardTitle className="text-2xl">Welcome back</CardTitle>
+          <CardTitle className="text-2xl">Open the live demo</CardTitle>
           <CardDescription>
-            Sign in to continue your DSA journey
+            No signup required. Explore the student journey, Point &amp; Ask, spatial answers, and the master workspace.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Google Sign In */}
           <Button
-            onClick={handleGoogleSignIn}
+            onClick={handleDemoAccess}
             disabled={isLoading}
             className="w-full gap-2"
             size="lg"
           >
-            <Globe className="h-5 w-5" />
-            Continue with Google
+            <Play className="h-5 w-5" />
+            Enter live demo
             <ArrowRight className="h-4 w-4 ml-auto" />
           </Button>
-
-          <p className="text-center text-sm text-neutral-500 dark:text-neutral-400">
-            StudyOS currently uses Google sign-in only. Email-and-password accounts are not offered.
-          </p>
 
           {error && (
             <div className="p-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg text-center">
