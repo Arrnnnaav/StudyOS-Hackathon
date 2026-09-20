@@ -48,6 +48,7 @@ test('ECS Express deployment has the required roles and server-side runtime secr
   assert.match(template, /RuntimeConfigSecret:/)
   assert.match(template, /AmazonECSTaskExecutionRolePolicy/)
   assert.match(template, /AmazonECSInfrastructureRoleforExpressGatewayServices/)
+  assert.match(template, /ecr:BatchGetImage/)
   assert.match(template, /token\.actions\.githubusercontent\.com/)
   assert.match(template, /RuntimeSecretArn:/)
 
