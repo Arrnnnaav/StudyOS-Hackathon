@@ -61,6 +61,7 @@ test('ECS Express deployment has the required roles and server-side runtime secr
   assert.match(workflow, /task-role-arn: \$\{\{ vars\.ECS_TASK_ROLE_ARN \}\}/)
   assert.match(workflow, /vars\.RUNTIME_SECRET_ARN/)
   assert.match(workflow, /NVIDIA_NIM_API_KEY/)
+  assert.match(workflow, /"AUTH_URL","value":"https:\/\/le-eee1a14046a44cd1b2f9d6fe82789fda\.ecs\.us-east-1\.on\.aws"/)
   assert.doesNotMatch(workflow, /environment: production/)
 })
 
