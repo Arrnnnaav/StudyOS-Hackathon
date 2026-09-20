@@ -11,10 +11,17 @@ document.getElementById('openPanel').addEventListener('click', async () => {
 
 document.getElementById('pairExtension').addEventListener('click', async () => {
   try {
-    await chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' })
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!tab?.windowId) throw new Error('Open a browser tab before pairing')
+    await chrome.sidePanel.open({ windowId: tab.windowId })
     window.close()
   } catch (e) {
-    alert('Unable to open the pairing panel. Try again from an open webpage.')
+    try {
+      await chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' })
+      window.close()
+    } catch {
+      alert('Unable to open the pairing panel. Try again from an open webpage.')
+    }
   }
 })
 

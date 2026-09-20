@@ -40,6 +40,7 @@ test('student setup does not depend on a source folder or remotely hosted extens
   assert.match(spatialContent, /Public-web fallback sources/)
   assert.match(popup, /id="pairExtension"/)
   assert.match(popupScript, /type: 'OPEN_SIDE_PANEL'/)
+  assert.match(popupScript, /chrome\.sidePanel\.open/)
 })
 
 test('clearing a spatial selection also resets opt-in research mode', () => {
