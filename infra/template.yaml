@@ -21,7 +21,7 @@ Parameters:
     Description: Name of the private ECR repository created for the production image.
   GitHubRepository:
     Type: String
-    Default: Arrnnnaav/StudyOS-Hackathon
+    Default: Arrnnnaav@157985495/StudyOS-Hackathon@1375449954
     Description: GitHub owner/repository allowed to deploy the main branch through OIDC.
 
 Resources:

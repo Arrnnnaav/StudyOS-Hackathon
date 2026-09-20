@@ -7,11 +7,16 @@ const rootFile = (file) => readFileSync(new URL(`../${file}`, import.meta.url), 
 test('ECS release assets build a Node 22 container and expose the app port', () => {
   assert.equal(existsSync(new URL('../Dockerfile', import.meta.url)), true)
   assert.equal(existsSync(new URL('../.dockerignore', import.meta.url)), true)
+  assert.equal(existsSync(new URL('../pnpm-workspace.yaml', import.meta.url)), true)
   const dockerfile = rootFile('Dockerfile')
+  const workspace = rootFile('pnpm-workspace.yaml')
   assert.match(dockerfile, /FROM node:22-/)
+  assert.match(dockerfile, /COPY package\.json pnpm-lock\.yaml pnpm-workspace\.yaml \.\//)
   assert.match(dockerfile, /EXPOSE 3000/)
   assert.match(dockerfile, /pnpm build/)
   assert.match(dockerfile, /pnpm", "start/)
+  assert.match(workspace, /allowBuilds:/)
+  assert.match(workspace, /sharp: false/)
 })
 
 test('main-branch CI validates before an OIDC-backed ECS Express deployment', () => {
@@ -39,6 +44,7 @@ test('ECS Express deployment has the required roles and server-side runtime secr
   assert.match(template, /EcsExpressInfrastructureRole:/)
   assert.match(template, /GitHubActionsDeployRole:/)
   assert.match(template, /GitHubOidcProvider:/)
+  assert.match(template, /Arrnnnaav@157985495\/StudyOS-Hackathon@1375449954/)
   assert.match(template, /RuntimeConfigSecret:/)
   assert.match(template, /AmazonECSTaskExecutionRolePolicy/)
   assert.match(template, /AmazonECSInfrastructureRoleforExpressGatewayServices/)
