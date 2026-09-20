@@ -26,6 +26,8 @@ test('student setup does not depend on a source folder or remotely hosted extens
   const pairingGuide = appFile('dashboard/settings/pairing-guide/page.tsx')
   const settings = appFile('dashboard/settings/page.tsx')
   const spatialContent = extensionFile('spatial-content.js')
+  const popup = extensionFile('popup.html')
+  const popupScript = extensionFile('popup.js')
 
   assert.doesNotMatch(sidepanel, /https:\/\/cdn\.tailwindcss\.com/)
   assert.doesNotMatch(sidepanel, /https:\/\/fonts\.googleapis\.com/)
@@ -36,6 +38,8 @@ test('student setup does not depend on a source folder or remotely hosted extens
   assert.doesNotMatch(spatialContent, /localhost:3000/)
   assert.match(spatialContent, /Gemini Google Search/)
   assert.match(spatialContent, /Public-web fallback sources/)
+  assert.match(popup, /id="pairExtension"/)
+  assert.match(popupScript, /type: 'OPEN_SIDE_PANEL'/)
 })
 
 test('clearing a spatial selection also resets opt-in research mode', () => {

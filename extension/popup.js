@@ -9,6 +9,15 @@ document.getElementById('openPanel').addEventListener('click', async () => {
   }
 })
 
+document.getElementById('pairExtension').addEventListener('click', async () => {
+  try {
+    await chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' })
+    window.close()
+  } catch (e) {
+    alert('Unable to open the pairing panel. Try again from an open webpage.')
+  }
+})
+
 const spatialBtn = document.getElementById('spatialBtn')
 if (spatialBtn) {
   spatialBtn.addEventListener('click', async () => {

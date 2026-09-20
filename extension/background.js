@@ -213,7 +213,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     },
     
     async OPEN_SIDE_PANEL() {
-      await chrome.sidePanel.open({ windowId: sender.tab?.windowId })
+      const tab = sender.tab || (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
+      if (!tab?.windowId) throw new Error('Open a browser tab before pairing')
+      await chrome.sidePanel.open({ windowId: tab.windowId })
       sendResponse({ success: true })
     },
     async CAPTURE_SELECTION() {
