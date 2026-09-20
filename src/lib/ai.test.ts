@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { AIProviderUnavailableError, generateText, streamText, type AiDependencies } from './ai.ts'
+import { AIProviderUnavailableError, GEMINI_MODEL, generateText, streamText, type AiDependencies } from './ai.ts'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -9,6 +9,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 function deps(fetch: typeof globalThis.fetch): AiDependencies {
   return { fetch, config: { apiKey: 'test-key', model: 'gemini-2.5-flash', timeoutMs: 5_000 } }
 }
+
+test('uses Gemini 3.6 Flash as the supported default model', () => {
+  assert.equal(GEMINI_MODEL, 'gemini-3.6-flash')
+})
 
 test('generates a server-side Gemini answer with separate system instruction', async () => {
   let requestedUrl = ''

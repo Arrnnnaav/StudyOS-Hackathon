@@ -73,7 +73,7 @@ function configuredResearch(): ResearchConfig {
     bedrockApiKey: process.env.BEDROCK_MANTLE_API_KEY || '',
     bedrockModel: process.env.BEDROCK_WEB_SEARCH_MODEL || 'openai.gpt-5.6-terra',
     geminiApiKey: process.env.GEMINI_API_KEY || '',
-    geminiModel: process.env.GEMINI_RESEARCH_MODEL || 'gemini-2.5-flash',
+    geminiModel: process.env.GEMINI_RESEARCH_MODEL || 'gemini-3.6-flash',
     timeoutMs: Number(process.env.RESEARCH_PROVIDER_TIMEOUT_MS || 30_000),
     failureThreshold: Number(process.env.RESEARCH_BEDROCK_FAILURE_THRESHOLD || 3),
     cooldownMs: Number(process.env.RESEARCH_BEDROCK_COOLDOWN_MS || 30_000),

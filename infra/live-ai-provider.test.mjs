@@ -21,7 +21,7 @@ test('all live AI routes use the Gemini provider boundary instead of Bedrock', a
 test('example configuration makes Gemini the active live provider', async () => {
   const env = await readFile(new URL('.env.example', root), 'utf8')
   assert.match(env, /^GEMINI_API_KEY=/m)
-  assert.match(env, /^GEMINI_MODEL=gemini-2\.5-flash$/m)
+  assert.match(env, /^GEMINI_MODEL=gemini-3\.6-flash$/m)
   assert.match(env, /^BEDROCK_WEB_SEARCH_ENABLED=false$/m)
 })
 
