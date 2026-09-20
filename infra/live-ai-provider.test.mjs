@@ -57,3 +57,12 @@ test('the app provides an extension privacy disclosure for Store submission', as
   assert.match(policy, /Normal Ask/i)
   assert.match(policy, /previous questions and answers/i)
 })
+
+test('the sign-in terms link resolves to a public Terms page', async () => {
+  const signIn = await readFile(new URL('src/app/auth/signin/page.tsx', root), 'utf8')
+  const terms = await readFile(new URL('src/app/terms/page.tsx', root), 'utf8')
+
+  assert.match(signIn, /href="\/terms"/)
+  assert.match(terms, /Terms of Service/)
+  assert.match(terms, /Privacy/)
+})
