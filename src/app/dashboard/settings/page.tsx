@@ -105,7 +105,7 @@ export default function SettingsPage() {
             Connect Extension
           </CardTitle>
           <CardDescription>
-            Generate a 6-character pairing code to connect the StudyOS Chrome extension to your account.
+            Generate a 6-character pairing code to connect the LearningHQ Chrome extension to your account.
             The code expires in 10 minutes and is single-use. This is a beta pairing flow.
           </CardDescription>
         </CardHeader>
@@ -125,7 +125,7 @@ export default function SettingsPage() {
                   </Button>
                 </div>
                 <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-3">
-                  1. Open the StudyOS extension side panel • 2. Click &quot;Pair with StudyOS&quot; • 3. Enter this code
+                  1. Open the LearningHQ extension side panel • 2. Click &quot;Pair with LearningHQ&quot; • 3. Enter this code
                 </p>
               </div>
               <Button variant="ghost" onClick={generateCode} disabled={generating}>
@@ -142,12 +142,12 @@ export default function SettingsPage() {
 
           <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
             <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-2">
-              Don&apos;t have the extension yet? Load it in Chrome:
+              Don&apos;t have the extension yet? Install it from the LearningHQ Chrome Web Store link provided by your institution.
             </p>
             <ol className="text-sm text-neutral-600 dark:text-neutral-400 list-decimal list-inside space-y-1">
-              <li>Open <code className="text-emerald-600">chrome://extensions</code></li>
-              <li>Enable <strong>Developer mode</strong></li>
-              <li>Click <strong>Load unpacked</strong> and select the <code>/extension</code> folder</li>
+              <li>Install the LearningHQ Point &amp; Ask extension from the Chrome Web Store.</li>
+              <li>Open any study page and select text or choose Circle &amp; Ask.</li>
+              <li>Return here to generate a pairing code.</li>
             </ol>
             <a
               href="/dashboard/settings/pairing-guide"

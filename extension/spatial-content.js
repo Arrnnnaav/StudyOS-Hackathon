@@ -10,7 +10,7 @@
   window.__studyosSpatialLoaded = true;
 
   const G = window.StudyOSGeometry;
-  const CFG = window.STUDYOS_SPATIAL || { apiBase: 'http://localhost:3000/api', productName: 'StudyOS', features: {}, privacy: 'anchors_only' };
+  const CFG = window.STUDYOS_SPATIAL || { apiBase: 'https://learninghq.in/api', productName: 'LearningHQ', features: {}, privacy: 'anchors_only' };
   const RECT_ONLY = CFG.features && CFG.features.rectangleOnly !== false;
   const PRIVACY = CFG.privacy || 'anchors_only';
   const STROKE = '#16a34a';
@@ -398,7 +398,8 @@
       try { return new URL(source && source.url).protocol === 'https:'; } catch { return false; }
     });
     if (!sources.length) return;
-    const box = el('div', { class: 'sources' }, [result.provider === 'groq-compound' ? 'Groq Compound sources' : 'Bedrock Web Search sources']);
+    const label = result.provider === 'gemini-google-search' ? 'Gemini Google Search sources' : 'Bedrock Web Search sources';
+    const box = el('div', { class: 'sources' }, [label]);
     sources.forEach((source, index) => {
       box.append(el('a', { href: source.url, target: '_blank', rel: 'noopener noreferrer', title: source.title || source.url }, [`${index + 1}. ${source.title || source.url}`]));
     });
