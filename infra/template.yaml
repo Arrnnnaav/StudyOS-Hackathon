@@ -15,6 +15,14 @@ Parameters:
   Environment:
     Type: String
     Default: hackathon
+  EcrRepositoryName:
+    Type: String
+    Default: learninghq
+    Description: Name of the private ECR repository created for the production image.
+  GitHubRepository:
+    Type: String
+    Default: Arrnnnaav/StudyOS-Hackathon
+    Description: GitHub owner/repository allowed to deploy the main branch through OIDC.
 
 Resources:
   # ---------------- Identity: Cognito ----------------
@@ -211,7 +219,7 @@ Resources:
             Action: [s3:PutObject, s3:GetObject]
             Resource: !Sub "${CropBucket.Arn}/*"
           - Effect: Allow
-            Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:Scan, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:BatchWriteItem]
+            Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:Scan, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem, dynamodb:BatchWriteItem, dynamodb:TransactWriteItems]
             Resource:
               - !GetAtt UsersTable.Arn
               - !GetAtt ProgressTable.Arn
@@ -222,6 +230,9 @@ Resources:
               - !GetAtt PairingCodesTable.Arn
               - !GetAtt AskSafetyTable.Arn
               - !GetAtt OrganizationsTable.Arn
+              - !Sub "${UsersTable.Arn}/index/GSI1"
+              - !Sub "${AsksTable.Arn}/index/GSI1"
+              - !Sub "${ReviewsTable.Arn}/index/GSI1"
 
   # Kept for teams that deliberately choose an Amplify-supported Next.js version.
   # It gives SSR handlers short-lived credentials rather than static access keys.
@@ -256,6 +267,115 @@ Resources:
       ManagedPolicyArns:
         - !Ref BedrockPolicy
 
+  # ---------------- ECS Express and GitHub Actions delivery ----------------
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub studyos-ecs-execution-${Environment}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadRuntimeSecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref RuntimeConfigSecret
+
+  EcsTaskApplicationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub studyos-ecs-task-${Environment}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref BedrockPolicy
+
+  EcsExpressInfrastructureRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub studyos-ecs-infrastructure-${Environment}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRoleforExpressGatewayServices
+
+  RuntimeConfigSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub learninghq-${Environment}-runtime
+      Description: Runtime configuration for LearningHQ ECS tasks. Replace the bootstrap value with the required JSON keys before deployment.
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: bootstrap
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub studyos-github-deploy-${Environment}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref GitHubOidcProvider
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepository}:ref:refs/heads/main
+      Policies:
+        - PolicyName: PushLearningHqImage
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action: [ecr:BatchCheckLayerAvailability, ecr:CompleteLayerUpload, ecr:InitiateLayerUpload, ecr:PutImage, ecr:UploadLayerPart]
+                Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/${EcrRepositoryName}
+        - PolicyName: DeployLearningHqEcsService
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [ecs:CreateCluster, ecs:RegisterTaskDefinition, ecs:CreateExpressGatewayService, ecs:UpdateExpressGatewayService, ecs:DescribeExpressGatewayService, ecs:DescribeClusters, ecs:DescribeServices, ecs:ListServiceDeployments, ecs:DescribeServiceDeployments, ecs:TagResource, ecs:UntagResource]
+                Resource: "*"
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt EcsTaskExecutionRole.Arn
+                  - !GetAtt EcsTaskApplicationRole.Arn
+                  - !GetAtt EcsExpressInfrastructureRole.Arn
+
   # ---------------- Observability: CloudWatch ----------------
   StudyLogGroup:
     Type: AWS::Logs::LogGroup
@@ -270,6 +390,16 @@ Outputs:
   AppRunnerInstanceRoleArn:
     Description: Attach this role as the App Runner service's instance role.
     Value: !GetAtt AppRunnerInstanceRole.Arn
+  EcsTaskExecutionRoleArn:
+    Value: !GetAtt EcsTaskExecutionRole.Arn
+  EcsTaskRoleArn:
+    Value: !GetAtt EcsTaskApplicationRole.Arn
+  EcsInfrastructureRoleArn:
+    Value: !GetAtt EcsExpressInfrastructureRole.Arn
+  GitHubActionsDeployRoleArn:
+    Value: !GetAtt GitHubActionsDeployRole.Arn
+  RuntimeSecretArn:
+    Value: !Ref RuntimeConfigSecret
   UserPoolId: { Value: !Ref UserPool }
   UserPoolClientId: { Value: !Ref UserPoolClient }
   Region: { Value: !Ref AWS::Region }

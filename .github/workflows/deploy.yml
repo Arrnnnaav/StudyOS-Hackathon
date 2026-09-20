@@ -33,7 +33,7 @@ jobs:
   deploy:
     name: Deploy to ECS Express Mode
     needs: validate
-    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_REGION != '' && vars.ECR_REPOSITORY != '' && vars.ECS_SERVICE != '' && vars.ECS_CLUSTER != '' }}
+    if: ${{ vars.AWS_DEPLOY_ROLE_ARN != '' && vars.AWS_REGION != '' && vars.ECR_REPOSITORY != '' && vars.ECS_SERVICE != '' && vars.ECS_CLUSTER != '' && vars.ECS_TASK_EXECUTION_ROLE_ARN != '' && vars.ECS_TASK_ROLE_ARN != '' && vars.ECS_INFRASTRUCTURE_ROLE_ARN != '' && vars.RUNTIME_SECRET_ARN != '' }}
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -44,6 +44,10 @@ jobs:
       ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
       ECS_SERVICE: ${{ vars.ECS_SERVICE }}
       ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_TASK_EXECUTION_ROLE_ARN: ${{ vars.ECS_TASK_EXECUTION_ROLE_ARN }}
+      ECS_TASK_ROLE_ARN: ${{ vars.ECS_TASK_ROLE_ARN }}
+      ECS_INFRASTRUCTURE_ROLE_ARN: ${{ vars.ECS_INFRASTRUCTURE_ROLE_ARN }}
+      RUNTIME_SECRET_ARN: ${{ vars.RUNTIME_SECRET_ARN }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure AWS credentials
@@ -71,9 +75,16 @@ jobs:
           service-name: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          execution-role-arn: ${{ vars.ECS_TASK_EXECUTION_ROLE_ARN }}
+          task-role-arn: ${{ vars.ECS_TASK_ROLE_ARN }}
+          infrastructure-role-arn: ${{ vars.ECS_INFRASTRUCTURE_ROLE_ARN }}
           container-port: 3000
           health-check-path: /api/health
           min-task-count: 1
           max-task-count: 2
           auto-scaling-metric: AVERAGE_CPU
           auto-scaling-target-value: 70
+          environment-variables: |
+            [{"name":"NODE_ENV","value":"production"},{"name":"AWS_REGION","value":"${{ vars.AWS_REGION }}"},{"name":"AUTH_TRUST_HOST","value":"true"}]
+          secrets: |
+            [{"name":"GOOGLE_CLIENT_ID","valueFrom":"${{ vars.RUNTIME_SECRET_ARN }}:GOOGLE_CLIENT_ID::"},{"name":"GOOGLE_CLIENT_SECRET","valueFrom":"${{ vars.RUNTIME_SECRET_ARN }}:GOOGLE_CLIENT_SECRET::"},{"name":"NEXTAUTH_SECRET","valueFrom":"${{ vars.RUNTIME_SECRET_ARN }}:NEXTAUTH_SECRET::"},{"name":"NEXTAUTH_URL","valueFrom":"${{ vars.RUNTIME_SECRET_ARN }}:NEXTAUTH_URL::"},{"name":"NVIDIA_NIM_API_KEY","valueFrom":"${{ vars.RUNTIME_SECRET_ARN }}:NVIDIA_NIM_API_KEY::"},{"name":"MASTER_ADMIN_EMAIL","valueFrom":"${{ vars.RUNTIME_SECRET_ARN }}:MASTER_ADMIN_EMAIL::"}]

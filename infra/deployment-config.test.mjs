@@ -29,6 +29,28 @@ test('main-branch CI validates before an OIDC-backed ECS Express deployment', ()
   assert.doesNotMatch(workflow, /GEMINI_API_KEY=.+/)
 })
 
+test('ECS Express deployment has the required roles and server-side runtime secret wiring', () => {
+  const template = rootFile('infra/template.yaml')
+  const workflow = rootFile('.github/workflows/deploy.yml')
+
+  assert.match(template, /EcsTaskExecutionRole:/)
+  assert.match(template, /EcsTaskApplicationRole:/)
+  assert.match(template, /EcsExpressInfrastructureRole:/)
+  assert.match(template, /GitHubActionsDeployRole:/)
+  assert.match(template, /GitHubOidcProvider:/)
+  assert.match(template, /RuntimeConfigSecret:/)
+  assert.match(template, /AmazonECSTaskExecutionRolePolicy/)
+  assert.match(template, /AmazonECSInfrastructureRoleforExpressGatewayServices/)
+  assert.match(template, /token\.actions\.githubusercontent\.com/)
+  assert.match(template, /RuntimeSecretArn:/)
+
+  assert.match(workflow, /execution-role-arn: \$\{\{ vars\.ECS_TASK_EXECUTION_ROLE_ARN \}\}/)
+  assert.match(workflow, /infrastructure-role-arn: \$\{\{ vars\.ECS_INFRASTRUCTURE_ROLE_ARN \}\}/)
+  assert.match(workflow, /task-role-arn: \$\{\{ vars\.ECS_TASK_ROLE_ARN \}\}/)
+  assert.match(workflow, /vars\.RUNTIME_SECRET_ARN/)
+  assert.match(workflow, /NVIDIA_NIM_API_KEY/)
+})
+
 test('load balancer health endpoint is an unauthenticated ok route', () => {
   const route = rootFile('src/app/api/health/route.ts')
   assert.match(route, /export function GET\(\)/)
