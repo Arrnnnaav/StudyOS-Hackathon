@@ -3,7 +3,7 @@
 
 // API base: the published extension uses LearningHQ. Developers may override it
 // locally without exposing an endpoint chooser to students.
-const DEFAULT_API_BASE = 'https://learninghq.in/api'
+const DEFAULT_API_BASE = 'https://le-eee1a14046a44cd1b2f9d6fe82789fda.ecs.us-east-1.on.aws/api'
 let API_BASE = DEFAULT_API_BASE
 async function apiBase() {
   try {

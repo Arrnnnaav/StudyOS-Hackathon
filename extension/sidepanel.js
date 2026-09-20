@@ -1,6 +1,6 @@
 // StudyOS Extension Side Panel Script
 
-const API_BASE = 'https://learninghq.in/api'
+const API_BASE = 'https://le-eee1a14046a44cd1b2f9d6fe82789fda.ecs.us-east-1.on.aws/api'
 
 // DOM Elements
 const emptyState = document.getElementById('emptyState')

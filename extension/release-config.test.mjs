@@ -9,12 +9,16 @@ test('student extension uses the LearningHQ API without broad persistent page ac
   const manifest = JSON.parse(extensionFile('manifest.json'))
   const config = extensionFile('config.js')
   const background = extensionFile('background.js')
+  const spatialContent = extensionFile('spatial-content.js')
+  const sidepanel = extensionFile('sidepanel.js')
 
-  assert.deepEqual(manifest.host_permissions, ['https://learninghq.in/*'])
+  assert.deepEqual(manifest.host_permissions, ['https://le-eee1a14046a44cd1b2f9d6fe82789fda.ecs.us-east-1.on.aws/*'])
   assert.equal(manifest.content_scripts, undefined)
   assert.equal(manifest.web_accessible_resources, undefined)
-  assert.match(config, /https:\/\/learninghq\.in\/api/)
-  assert.match(background, /https:\/\/learninghq\.in\/api/)
+  assert.match(config, /https:\/\/le-eee1a14046a44cd1b2f9d6fe82789fda\.ecs\.us-east-1\.on\.aws\/api/)
+  assert.match(background, /https:\/\/le-eee1a14046a44cd1b2f9d6fe82789fda\.ecs\.us-east-1\.on\.aws\/api/)
+  assert.match(spatialContent, /https:\/\/le-eee1a14046a44cd1b2f9d6fe82789fda\.ecs\.us-east-1\.on\.aws\/api/)
+  assert.match(sidepanel, /https:\/\/le-eee1a14046a44cd1b2f9d6fe82789fda\.ecs\.us-east-1\.on\.aws\/api/)
 })
 
 test('student setup does not depend on a source folder or remotely hosted extension code', () => {

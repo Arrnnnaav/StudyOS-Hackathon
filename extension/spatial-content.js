@@ -10,7 +10,7 @@
   window.__studyosSpatialLoaded = true;
 
   const G = window.StudyOSGeometry;
-  const CFG = window.STUDYOS_SPATIAL || { apiBase: 'https://learninghq.in/api', productName: 'LearningHQ', features: {}, privacy: 'anchors_only' };
+  const CFG = window.STUDYOS_SPATIAL || { apiBase: 'https://le-eee1a14046a44cd1b2f9d6fe82789fda.ecs.us-east-1.on.aws/api', productName: 'StudyOS', features: {}, privacy: 'anchors_only' };
   const RECT_ONLY = CFG.features && CFG.features.rectangleOnly !== false;
   const PRIVACY = CFG.privacy || 'anchors_only';
   const STROKE = '#16a34a';
