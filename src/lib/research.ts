@@ -8,7 +8,7 @@ export type ResearchResult = {
   answer: string
   sources: ResearchSource[]
   cited: string[]
-  provider: 'bedrock-web-search' | 'gemini-google-search' | 'gemini-web-fallback'
+  provider: 'bedrock-web-search' | 'gemini-google-search' | 'gemini-web-fallback' | 'nvidia-nim-web-fallback'
 }
 
 export type ResearchInput = {
@@ -26,6 +26,8 @@ export type ResearchConfig = {
   bedrockModel: string
   geminiApiKey: string
   geminiModel: string
+  nimApiKey: string
+  nimModel: string
   timeoutMs: number
   failureThreshold: number
   cooldownMs: number
@@ -74,6 +76,8 @@ function configuredResearch(): ResearchConfig {
     bedrockModel: process.env.BEDROCK_WEB_SEARCH_MODEL || 'openai.gpt-5.6-terra',
     geminiApiKey: process.env.GEMINI_API_KEY || '',
     geminiModel: process.env.GEMINI_RESEARCH_MODEL || 'gemini-3.6-flash',
+    nimApiKey: process.env.NVIDIA_NIM_API_KEY || '',
+    nimModel: process.env.NVIDIA_NIM_MODEL || 'openai/gpt-oss-20b',
     timeoutMs: Number(process.env.RESEARCH_PROVIDER_TIMEOUT_MS || 30_000),
     failureThreshold: Number(process.env.RESEARCH_BEDROCK_FAILURE_THRESHOLD || 3),
     cooldownMs: Number(process.env.RESEARCH_BEDROCK_COOLDOWN_MS || 30_000),
@@ -186,6 +190,15 @@ function geminiMessage(body: Record<string, unknown>): { answer: string; citatio
     ? record.groundingMetadata as { groundingChunks?: unknown }
     : undefined
   return { answer, citations: metadata?.groundingChunks ?? [] }
+}
+
+function nimMessage(body: Record<string, unknown>): string {
+  const choice = Array.isArray(body.choices) ? body.choices[0] : undefined
+  if (!choice || typeof choice !== 'object') return ''
+  const message = (choice as { message?: unknown }).message
+  if (!message || typeof message !== 'object') return ''
+  const content = (message as { content?: unknown }).content
+  return typeof content === 'string' ? content.trim() : ''
 }
 
 function cleanHtml(value: string): string {
@@ -315,6 +328,30 @@ async function callGeminiWebFallback(prompt: string, query: string, config: Rese
   return { answer: cited.answer, sources: cited.sources, cited: cited.sources.map((source) => source.url) }
 }
 
+async function callNimWebFallback(prompt: string, query: string, config: ResearchConfig, fetchImpl: typeof fetch): Promise<Omit<ResearchResult, 'provider'>> {
+  const sources = await duckDuckGoSources(query, config, fetchImpl)
+  if (sources.length === 0) throw new ResearchUnavailableError()
+  const sourceBlock = sources.map((source, index) => `[${index + 1}] ${source.title} — ${source.url}`).join('\n')
+  const body = await requestJson(fetchImpl, 'https://integrate.api.nvidia.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${config.nimApiKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: config.nimModel,
+      messages: [
+        { role: 'system', content: 'Answer only from supplied public-web results. Put [1], [2], etc. after every factual claim. If the results are insufficient, say so.' },
+        { role: 'user', content: `${prompt}\n\nPublic-web search results:\n${sourceBlock}` },
+      ],
+      max_tokens: 1_200,
+      temperature: 0.2,
+      stream: false,
+    }),
+  }, config.timeoutMs, true)
+  const answer = nimMessage(body)
+  const cited = citedSources(answer, sources)
+  if (!answer || cited.sources.length === 0) throw new ResearchUnavailableError()
+  return { answer: cited.answer, sources: cited.sources, cited: cited.sources.map((source) => source.url) }
+}
+
 function circuitOpen(circuit: ResearchCircuit, now: number, cooldownMs: number): boolean {
   if (!circuit.openedAt) return false
   if (now - circuit.openedAt < cooldownMs) return true
@@ -349,14 +386,25 @@ export async function research(input: ResearchInput, deps: ResearchDependencies 
       const result = await callGemini(prompt, config, fetchImpl)
       return { ...result, provider: 'gemini-google-search' }
     } catch (error) {
-      if (error instanceof ResearchUnavailableError) throw error
+      if (error instanceof ResearchUnavailableError && !config.nimApiKey) throw error
       try {
         const result = await callGeminiWebFallback(prompt, input.question, config, fetchImpl)
         return { ...result, provider: 'gemini-web-fallback' }
       } catch (fallbackError) {
-        if (fallbackError instanceof ResearchUnavailableError) throw fallbackError
-        throw new ResearchProviderUnavailableError()
+        if (!config.nimApiKey) {
+          if (fallbackError instanceof ResearchUnavailableError) throw fallbackError
+          throw new ResearchProviderUnavailableError()
+        }
       }
+    }
+  }
+  if (config.nimApiKey) {
+    try {
+      const result = await callNimWebFallback(prompt, input.question, config, fetchImpl)
+      return { ...result, provider: 'nvidia-nim-web-fallback' }
+    } catch (error) {
+      if (error instanceof ResearchUnavailableError) throw error
+      throw new ResearchProviderUnavailableError()
     }
   }
   throw new ResearchProviderUnavailableError()

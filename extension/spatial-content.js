@@ -400,7 +400,7 @@
     if (!sources.length) return;
     const label = result.provider === 'gemini-google-search'
       ? 'Gemini Google Search sources'
-      : result.provider === 'gemini-web-fallback'
+      : result.provider === 'gemini-web-fallback' || result.provider === 'nvidia-nim-web-fallback'
         ? 'Public-web fallback sources'
         : 'Bedrock Web Search sources';
     const box = el('div', { class: 'sources' }, [label]);

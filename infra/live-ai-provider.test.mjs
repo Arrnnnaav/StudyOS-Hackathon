@@ -22,6 +22,8 @@ test('example configuration makes Gemini the active live provider', async () => 
   const env = await readFile(new URL('.env.example', root), 'utf8')
   assert.match(env, /^GEMINI_API_KEY=/m)
   assert.match(env, /^GEMINI_MODEL=gemini-3\.6-flash$/m)
+  assert.match(env, /^NVIDIA_NIM_API_KEY=$/m)
+  assert.match(env, /^NVIDIA_NIM_MODEL=openai\/gpt-oss-20b$/m)
   assert.match(env, /^BEDROCK_WEB_SEARCH_ENABLED=false$/m)
 })
 
@@ -38,6 +40,7 @@ test('the app provides an extension privacy disclosure for Store submission', as
   assert.match(policy, /selected text/i)
   assert.match(policy, /server-side/i)
   assert.match(policy, /Gemini/i)
+  assert.match(policy, /NVIDIA NIM/i)
   assert.match(policy, /DuckDuckGo/i)
   assert.match(policy, /Normal Ask/i)
   assert.match(policy, /previous questions and answers/i)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { AIProviderUnavailableError, GEMINI_MODEL, generateText, streamText, type AiDependencies } from './ai.ts'
+import { AIProviderUnavailableError, GEMINI_MODEL, NVIDIA_NIM_MODEL, generateText, streamText, type AiDependencies } from './ai.ts'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -12,6 +12,7 @@ function deps(fetch: typeof globalThis.fetch): AiDependencies {
 
 test('uses Gemini 3.6 Flash as the supported default model', () => {
   assert.equal(GEMINI_MODEL, 'gemini-3.6-flash')
+  assert.equal(NVIDIA_NIM_MODEL, 'openai/gpt-oss-20b')
 })
 
 test('generates a server-side Gemini answer with separate system instruction', async () => {
@@ -43,6 +44,36 @@ test('fails safely when Gemini is not configured or returns no answer', async ()
   )
 })
 
+test('falls back to server-side NVIDIA NIM when Gemini is unavailable', async () => {
+  let nimRequest: RequestInit | undefined
+  const result = await generateText({ system: 'Be concise.', user: 'Explain a queue.' }, {
+    fetch: async (url, init) => {
+      if (String(url).includes('generativelanguage.googleapis.com')) return jsonResponse({ error: 'unavailable' }, 503)
+      nimRequest = init
+      assert.equal(String(url), 'https://integrate.api.nvidia.com/v1/chat/completions')
+      return jsonResponse({ choices: [{ message: { content: 'A queue is FIFO.' }, finish_reason: 'stop' }] })
+    },
+    config: {
+      apiKey: 'test-gemini-key',
+      model: 'gemini-2.5-flash',
+      nimApiKey: 'test-nim-key',
+      nimModel: 'openai/gpt-oss-20b',
+      timeoutMs: 5_000,
+    },
+  })
+
+  assert.equal(result.text, 'A queue is FIFO.')
+  assert.equal(result.model, 'openai/gpt-oss-20b')
+  assert.equal((nimRequest?.headers as Record<string, string>).authorization, 'Bearer test-nim-key')
+  assert.deepEqual(JSON.parse(String(nimRequest?.body)), {
+    model: 'openai/gpt-oss-20b',
+    messages: [{ role: 'system', content: 'Be concise.' }, { role: 'user', content: 'Explain a queue.' }],
+    max_tokens: 1_000,
+    temperature: 0.3,
+    stream: false,
+  })
+})
+
 test('streams Gemini SSE answer text in provider order', async () => {
   const encoder = new TextEncoder()
   const body = new ReadableStream<Uint8Array>({
@@ -60,6 +91,30 @@ test('streams Gemini SSE answer text in provider order', async () => {
   }))) chunks.push(chunk)
 
   assert.deepEqual(chunks, ['Hello ', 'world'])
+})
+
+test('streams NVIDIA NIM only when Gemini fails before emitting a delta', async () => {
+  const encoder = new TextEncoder()
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"NIM "}}]}\n\n'))
+      controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"fallback"},"finish_reason":"stop"}]}\n\n'))
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+      controller.close()
+    },
+  })
+  const chunks: string[] = []
+  for await (const chunk of streamText({ system: 's', user: 'u' }, {
+    fetch: async (url, init) => {
+      if (String(url).includes('generativelanguage.googleapis.com')) return jsonResponse({ error: 'unavailable' }, 503)
+      assert.equal(String(url), 'https://integrate.api.nvidia.com/v1/chat/completions')
+      assert.equal((init?.headers as Record<string, string>).authorization, 'Bearer test-nim-key')
+      return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    },
+    config: { apiKey: 'test-gemini-key', nimApiKey: 'test-nim-key', nimModel: 'openai/gpt-oss-20b', timeoutMs: 5_000 },
+  })) chunks.push(chunk)
+
+  assert.deepEqual(chunks, ['NIM ', 'fallback'])
 })
 
 test('accepts standard CRLF-delimited Gemini SSE frames', async () => {

@@ -150,6 +150,29 @@ test('falls back to cited public-web results when Gemini Search grounding is quo
   assert.equal(new URLSearchParams(searchBody).get('q'), input.question)
 })
 
+test('uses NVIDIA NIM to produce a cited public-web answer when Gemini is unavailable', async () => {
+  const result = await research(input, deps(async (url, init) => {
+    const target = String(url)
+    if (target.includes('duckduckgo.com')) {
+      return new Response('<a class="result__a" href="https://nodejs.org/en/about/previous-releases">Node.js releases</a>')
+    }
+    assert.equal(target, 'https://integrate.api.nvidia.com/v1/chat/completions')
+    assert.equal((init?.headers as Record<string, string>).authorization, 'Bearer test-nim-key')
+    return jsonResponse({ choices: [{ message: { content: 'Node.js has an LTS release line. [1]' }, finish_reason: 'stop' }] })
+  }, {
+    config: {
+      bedrockEnabled: false,
+      geminiApiKey: '',
+      nimApiKey: 'test-nim-key',
+      nimModel: 'openai/gpt-oss-20b',
+    },
+  }))
+
+  assert.equal(result.provider, 'nvidia-nim-web-fallback')
+  assert.equal(result.sources[0]?.url, 'https://nodejs.org/en/about/previous-releases')
+  assert.match(result.answer, /\[1\]/)
+})
+
 test('does not call Gemini when Bedrock returned an uncited answer', async () => {
   const calls: string[] = []
   await assert.rejects(research(input, deps(async (url) => {
