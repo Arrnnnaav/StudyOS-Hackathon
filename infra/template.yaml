@@ -53,6 +53,7 @@ Resources:
   UsersTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: StudyOSUsers
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }
@@ -72,6 +73,7 @@ Resources:
   ProgressTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: StudyOSProgress
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }
@@ -83,6 +85,7 @@ Resources:
   AsksTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: StudyOSAsks
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }
@@ -102,6 +105,7 @@ Resources:
   ReviewsTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: StudyOSReviews
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }
@@ -121,6 +125,7 @@ Resources:
   EventsTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: StudyOSEvents
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }
@@ -132,6 +137,7 @@ Resources:
   ExtensionTokensTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: StudyOSExtensionTokens
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }
@@ -143,6 +149,7 @@ Resources:
   PairingCodesTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: StudyOSPairingCodes
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }
@@ -156,6 +163,7 @@ Resources:
   AskSafetyTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: StudyOSAskSafety
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }
@@ -172,6 +180,7 @@ Resources:
   OrganizationsTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: StudyOSOrganizations
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - { AttributeName: PK, AttributeType: S }

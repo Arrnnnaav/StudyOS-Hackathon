@@ -50,6 +50,9 @@ test('ECS Express deployment has the required roles and server-side runtime secr
   assert.match(template, /GitHubOidcProvider:/)
   assert.match(template, /Arrnnnaav@157985495\/StudyOS-Hackathon@1375449954/)
   assert.match(template, /RuntimeConfigSecret:/)
+  for (const tableName of ['StudyOSUsers', 'StudyOSProgress', 'StudyOSAsks', 'StudyOSReviews', 'StudyOSEvents', 'StudyOSExtensionTokens', 'StudyOSPairingCodes', 'StudyOSAskSafety', 'StudyOSOrganizations']) {
+    assert.match(template, new RegExp(`TableName: ${tableName}`))
+  }
   assert.match(template, /AmazonECSTaskExecutionRolePolicy/)
   assert.match(template, /AmazonECSInfrastructureRoleforExpressGatewayServices/)
   assert.match(template, /ecr:BatchGetImage/)
