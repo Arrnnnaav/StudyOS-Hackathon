@@ -46,6 +46,8 @@ test('fails safely when Gemini is not configured or returns no answer', async ()
 
 test('falls back to server-side NVIDIA NIM when Gemini is unavailable', async () => {
   let nimRequest: RequestInit | undefined
+  let selectedProvider: string | undefined
+  let selectedModel: string | undefined
   const result = await generateText({ system: 'Be concise.', user: 'Explain a queue.' }, {
     fetch: async (url, init) => {
       if (String(url).includes('generativelanguage.googleapis.com')) return jsonResponse({ error: 'unavailable' }, 503)
@@ -60,10 +62,14 @@ test('falls back to server-side NVIDIA NIM when Gemini is unavailable', async ()
       nimModel: 'openai/gpt-oss-20b',
       timeoutMs: 5_000,
     },
+    onProvider: (provider, model) => { selectedProvider = provider; selectedModel = model },
   })
 
   assert.equal(result.text, 'A queue is FIFO.')
   assert.equal(result.model, 'openai/gpt-oss-20b')
+  assert.equal(result.provider, 'nvidia-nim')
+  assert.equal(selectedProvider, 'nvidia-nim')
+  assert.equal(selectedModel, 'openai/gpt-oss-20b')
   assert.equal((nimRequest?.headers as Record<string, string>).authorization, 'Bearer test-nim-key')
   assert.deepEqual(JSON.parse(String(nimRequest?.body)), {
     model: 'openai/gpt-oss-20b',

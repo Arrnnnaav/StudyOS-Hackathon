@@ -1,4 +1,4 @@
-import { GEMINI_MODEL, streamText } from '@/lib/ai'
+import { streamText, type AiProvider } from '@/lib/ai'
 import { getAskContext } from '@/lib/db'
 import { abandonAskReservation, askRequestHash, completeAskReservation, parseIdempotencyKey, reserveAsk, takeDailyAskQuota, waitForAskResult } from '@/lib/ask-safety'
 import { resolveApiUser } from '@/lib/auth-utils'
@@ -44,15 +44,20 @@ export async function POST(request: Request) {
       async start(controller) {
         const started = Date.now()
         let answer = ''
+        let model = ''
+        let provider: AiProvider | undefined
         try {
-          controller.enqueue(sse('ready', { model: GEMINI_MODEL, replayed: false }))
+          controller.enqueue(sse('ready', { replayed: false }))
           const history = await getAskContext(user.userId, parsed.topicId, parsed.context.domain, 2)
           const prompt = buildAskPrompt(parsed.context, parsed.question, history)
-          for await (const delta of streamText({ system: askSystemPrompt(body.level), user: prompt, maxTokens: 1_000, temperature: 0.3 })) {
+          for await (const delta of streamText({ system: askSystemPrompt(body.level), user: prompt, maxTokens: 1_000, temperature: 0.3 }, {
+            onProvider: (selectedProvider, selectedModel) => { provider = selectedProvider; model = selectedModel },
+          })) {
             answer += delta
             controller.enqueue(sse('token', { delta }))
           }
-          const response = await persistAskAnswer(user.userId, parsed, answer, started, history.length)
+          if (!provider || !model) throw new Error('answer provider did not report a model')
+          const response = await persistAskAnswer(user.userId, parsed, answer, started, history.length, model, provider)
           await completeAskReservation(user.userId, key, response)
           controller.enqueue(sse('complete', response))
         } catch (error) {

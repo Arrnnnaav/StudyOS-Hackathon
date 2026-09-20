@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { resolveApiUser } from '@/lib/auth-utils'
 import { abandonAskReservation, askRequestHash, completeAskReservation, failAskReservation, reserveAsk, takeDailyResearchQuota, takeDailySpatialQuota, waitForAskResult } from '@/lib/ask-safety'
 import { createAsk, trackEvent } from '@/lib/db'
-import { GEMINI_MODEL, generateText } from '@/lib/ai'
+import { generateText, type AiResponse } from '@/lib/ai'
 import { research } from '@/lib/research'
 import { anchorsToContext } from '@/shared/spatial'
 import { resolve, describeTarget } from '@/shared/resolver'
@@ -166,11 +166,9 @@ export async function POST(request: Request) {
       confidence: target.confidence,
     })
 
-    let answer: string
-    let provider: 'gemini'
+    let generated: AiResponse
     try {
-      answer = (await generateText({ system: RESOLVED_SYSTEM, user: prompt, maxTokens: 900, temperature: 0.3 })).text
-      provider = 'gemini'
+      generated = await generateText({ system: RESOLVED_SYSTEM, user: prompt, maxTokens: 900, temperature: 0.3 })
     } catch {
       void trackEvent({
         eventId: crypto.randomUUID(),
@@ -185,6 +183,8 @@ export async function POST(request: Request) {
       return NextResponse.json(errorBody('PROVIDER_UNAVAILABLE', 'No answer provider is configured on this deployment.'), { status: 503 })
     }
 
+    const { text: answer, provider, model } = generated
+
     const latencyMs = Date.now() - started
     const askId = crypto.randomUUID()
     await createAsk({
@@ -198,7 +198,8 @@ export async function POST(request: Request) {
       nearbyAfter: '',
       question,
       answer,
-      model: GEMINI_MODEL,
+      model,
+      provider,
       latencyMs,
       helpful: null,
       feedbackReason: null,
@@ -227,7 +228,7 @@ export async function POST(request: Request) {
       anchors_used: (chosen ? [chosen] : []) as SpatialAnchor[],
       confidence: confidenceToNum(target.confidence),
       provider,
-      model: GEMINI_MODEL,
+      model,
       vision: false,
       ocr: false,
       sources: undefined,

@@ -8,7 +8,8 @@ export type AiRequest = {
   temperature?: number
 }
 
-export type AiResponse = { text: string; model: string }
+export type AiProvider = 'gemini' | 'nvidia-nim'
+export type AiResponse = { text: string; model: string; provider: AiProvider }
 
 export type AiConfig = {
   apiKey: string
@@ -28,6 +29,7 @@ export type AiDependencies = {
   config?: Partial<AiConfig>
   circuit?: AiCircuit
   nimCircuit?: AiCircuit
+  onProvider?: (provider: AiProvider, model: string) => void
 }
 
 export class AIProviderUnavailableError extends Error {
@@ -198,7 +200,7 @@ function recordSuccess(circuit: AiCircuit): void {
   circuit.openedAt = 0
 }
 
-/** Generate a bounded answer through the configured server-only Gemini key. */
+/** Generate a bounded answer through the configured server-only provider chain. */
 export async function generateText(request: AiRequest, deps: AiDependencies = {}): Promise<AiResponse> {
   const config = { ...configured(), ...deps.config }
   const now = deps.now ?? Date.now
@@ -209,7 +211,8 @@ export async function generateText(request: AiRequest, deps: AiDependencies = {}
     try {
       const text = await callGemini(request, config, fetchImpl)
       recordSuccess(circuit)
-      return { text, model: config.model }
+      deps.onProvider?.('gemini', config.model)
+      return { text, model: config.model, provider: 'gemini' }
     } catch {
       recordFailure(circuit, now(), config.failureThreshold)
     }
@@ -218,7 +221,8 @@ export async function generateText(request: AiRequest, deps: AiDependencies = {}
     try {
       const text = await callNim(request, config, fetchImpl)
       recordSuccess(nimCircuit)
-      return { text, model: config.nimModel }
+      deps.onProvider?.('nvidia-nim', config.nimModel)
+      return { text, model: config.nimModel, provider: 'nvidia-nim' }
     } catch {
       recordFailure(nimCircuit, now(), config.failureThreshold)
     }
@@ -295,6 +299,7 @@ export async function* streamText(request: AiRequest, deps: AiDependencies = {})
   let emitted = false
   if (config.apiKey && !circuitIsOpen(circuit, now(), config.cooldownMs)) {
     try {
+      deps.onProvider?.('gemini', config.model)
       for await (const chunk of streamGemini(request, config, fetchImpl)) {
         emitted = true
         yield chunk
@@ -308,6 +313,7 @@ export async function* streamText(request: AiRequest, deps: AiDependencies = {})
   }
   if (config.nimApiKey && !circuitIsOpen(nimCircuit, now(), config.cooldownMs)) {
     try {
+      deps.onProvider?.('nvidia-nim', config.nimModel)
       for await (const chunk of streamNim(request, config, fetchImpl)) yield chunk
       recordSuccess(nimCircuit)
       return

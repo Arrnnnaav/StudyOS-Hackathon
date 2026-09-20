@@ -40,6 +40,7 @@ export type ResearchDependencies = {
   now?: () => number
   config?: Partial<ResearchConfig>
   circuit?: ResearchCircuit
+  nimCircuit?: ResearchCircuit
 }
 
 export class ResearchUnavailableError extends Error {
@@ -67,6 +68,7 @@ class ProviderError extends Error {
 }
 
 const sharedCircuit: ResearchCircuit = { failures: 0, openedAt: 0 }
+const sharedNimCircuit: ResearchCircuit = { failures: 0, openedAt: 0 }
 
 function configuredResearch(): ResearchConfig {
   return {
@@ -345,7 +347,7 @@ async function callNimWebFallback(prompt: string, query: string, config: Researc
       temperature: 0.2,
       stream: false,
     }),
-  }, config.timeoutMs, true)
+  }, config.timeoutMs, false)
   const answer = nimMessage(body)
   const cited = citedSources(answer, sources)
   if (!answer || cited.sources.length === 0) throw new ResearchUnavailableError()
@@ -366,6 +368,7 @@ export async function research(input: ResearchInput, deps: ResearchDependencies 
   const fetchImpl = deps.fetch ?? globalThis.fetch
   const now = deps.now ?? Date.now
   const circuit = deps.circuit ?? sharedCircuit
+  const nimCircuit = deps.nimCircuit ?? sharedNimCircuit
   const prompt = buildResearchPrompt(input)
 
   if (config.bedrockEnabled && config.bedrockApiKey && !circuitOpen(circuit, now(), config.cooldownMs)) {
@@ -398,12 +401,16 @@ export async function research(input: ResearchInput, deps: ResearchDependencies 
       }
     }
   }
-  if (config.nimApiKey) {
+  if (config.nimApiKey && !circuitOpen(nimCircuit, now(), config.cooldownMs)) {
     try {
       const result = await callNimWebFallback(prompt, input.question, config, fetchImpl)
+      nimCircuit.failures = 0
+      nimCircuit.openedAt = 0
       return { ...result, provider: 'nvidia-nim-web-fallback' }
     } catch (error) {
       if (error instanceof ResearchUnavailableError) throw error
+      nimCircuit.failures += 1
+      if (nimCircuit.failures >= config.failureThreshold) nimCircuit.openedAt = now()
       throw new ResearchProviderUnavailableError()
     }
   }

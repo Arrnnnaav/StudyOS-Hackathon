@@ -18,6 +18,18 @@ test('all live AI routes use the Gemini provider boundary instead of Bedrock', a
   }
 })
 
+test('live routes retain the actual selected fallback provider in responses and audit records', async () => {
+  const ask = await readFile(new URL('src/app/api/ask/route.ts', root), 'utf8')
+  const stream = await readFile(new URL('src/app/api/ask/stream/route.ts', root), 'utf8')
+  const spatial = await readFile(new URL('src/app/api/spatial/ask/route.ts', root), 'utf8')
+
+  assert.match(ask, /generated\.model, generated\.provider/)
+  assert.match(stream, /onProvider: \(selectedProvider, selectedModel\)/)
+  assert.doesNotMatch(stream, /GEMINI_MODEL/)
+  assert.match(spatial, /const \{ text: answer, provider, model \} = generated/)
+  assert.doesNotMatch(spatial, /GEMINI_MODEL/)
+})
+
 test('example configuration makes Gemini the active live provider', async () => {
   const env = await readFile(new URL('.env.example', root), 'utf8')
   assert.match(env, /^GEMINI_API_KEY=/m)

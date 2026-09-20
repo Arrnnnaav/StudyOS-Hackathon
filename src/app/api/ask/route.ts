@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { GEMINI_MODEL, generateText } from '@/lib/ai'
+import { GEMINI_MODEL, generateText, type AiProvider } from '@/lib/ai'
 import { getAskContext, createAsk, trackEvent } from '@/lib/db'
 import { resolveApiUser } from '@/lib/auth-utils'
 import { abandonAskReservation, askRequestHash, completeAskReservation, parseIdempotencyKey, reserveAsk, takeDailyAskQuota, waitForAskResult, type StoredAskResponse } from '@/lib/ask-safety'
@@ -78,23 +78,23 @@ export async function answerAndPersist(userId: string, input: ParsedAsk, level?:
   const started = Date.now()
   const history = await getAskContext(userId, input.topicId, input.context.domain, 2)
   const prompt = buildAskPrompt(input.context, input.question, history)
-  const { text: answer } = await generateText({ system: askSystemPrompt(level), user: prompt, maxTokens: 1_000, temperature: 0.3 })
-  return persistAskAnswer(userId, input, answer, started, history.length)
+  const generated = await generateText({ system: askSystemPrompt(level), user: prompt, maxTokens: 1_000, temperature: 0.3 })
+  return persistAskAnswer(userId, input, generated.text, started, history.length, generated.model, generated.provider)
 }
 
-export async function persistAskAnswer(userId: string, input: ParsedAsk, answer: string, started: number, contextUsed: number): Promise<StoredAskResponse> {
+export async function persistAskAnswer(userId: string, input: ParsedAsk, answer: string, started: number, contextUsed: number, model = GEMINI_MODEL, provider: AiProvider = 'gemini'): Promise<StoredAskResponse> {
   const response: StoredAskResponse = {
     askId: crypto.randomUUID(), answer, grounding: extractGrounding(input.context, answer),
     insufficientContext: /insufficient|cannot answer|not enough information/i.test(answer),
-    latencyMs: Date.now() - started, model: GEMINI_MODEL, contextUsed,
+    latencyMs: Date.now() - started, model, contextUsed,
   }
   const now = new Date().toISOString()
   await createAsk({
     id: response.askId, userId, topicId: input.topicId, domain: input.context.domain, pageTitle: input.context.page_title,
     selectedText: input.context.selected_text, nearbyBefore: input.context.nearby_before, nearbyAfter: input.context.nearby_after,
-    question: input.question, answer, model: GEMINI_MODEL, latencyMs: response.latencyMs, helpful: null, feedbackReason: null, savedToReview: false, createdAt: now,
+    question: input.question, answer, model, provider, latencyMs: response.latencyMs, helpful: null, feedbackReason: null, savedToReview: false, createdAt: now,
   })
-  void trackEvent({ eventId: crypto.randomUUID(), eventName: 'point_ask_submitted', timestamp: now, userId, sessionId: 'web', topicId: input.topicId, domain: input.context.domain, properties: { model: GEMINI_MODEL, latencyMs: response.latencyMs, context_turns: contextUsed } }).catch(() => undefined)
+  void trackEvent({ eventId: crypto.randomUUID(), eventName: 'point_ask_submitted', timestamp: now, userId, sessionId: 'web', topicId: input.topicId, domain: input.context.domain, properties: { model, provider, latencyMs: response.latencyMs, context_turns: contextUsed } }).catch(() => undefined)
   return response
 }
 

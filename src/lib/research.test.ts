@@ -173,6 +173,33 @@ test('uses NVIDIA NIM to produce a cited public-web answer when Gemini is unavai
   assert.match(result.answer, /\[1\]/)
 })
 
+test('opens the NVIDIA NIM research circuit after three failed calls', async () => {
+  const calls: string[] = []
+  let now = 1_000
+  const nimCircuit = { failures: 0, openedAt: 0 }
+  const fetchImpl: typeof fetch = async (url) => {
+    calls.push(String(url))
+    if (String(url).includes('duckduckgo.com')) return new Response('<a class="result__a" href="https://nodejs.org">Node.js</a>')
+    return jsonResponse({ error: 'unavailable' }, 503)
+  }
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await assert.rejects(research(input, deps(fetchImpl, {
+      now: () => now,
+      nimCircuit,
+      config: { bedrockEnabled: false, geminiApiKey: '', nimApiKey: 'test-nim-key', nimModel: 'openai/gpt-oss-20b' },
+    })), ResearchProviderUnavailableError)
+    now += 1
+  }
+  await assert.rejects(research(input, deps(fetchImpl, {
+    now: () => now,
+    nimCircuit,
+    config: { bedrockEnabled: false, geminiApiKey: '', nimApiKey: 'test-nim-key', nimModel: 'openai/gpt-oss-20b' },
+  })), ResearchProviderUnavailableError)
+
+  assert.equal(calls.filter((url) => url.includes('integrate.api.nvidia.com')).length, 3)
+})
+
 test('does not call Gemini when Bedrock returned an uncited answer', async () => {
   const calls: string[] = []
   await assert.rejects(research(input, deps(async (url) => {
