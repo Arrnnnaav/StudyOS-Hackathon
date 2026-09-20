@@ -348,7 +348,7 @@ export async function getAskContext(userId: string, topicId: string | null, doma
 export async function createReview(review: {
   id: string
   userId: string
-  topicId: string
+  topicId: string | null
   askId: string
   question: string
   answer: string

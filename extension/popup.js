@@ -1,4 +1,9 @@
 // StudyOS popup - opens the side panel or starts a spatial (circle/box) Point & Ask.
+let activeWindowId = null
+void chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+  activeWindowId = tab?.windowId ?? null
+})
+
 document.getElementById('openPanel').addEventListener('click', async () => {
   try {
     const response = await chrome.runtime.sendMessage({ type: 'CAPTURE_SELECTION' })
@@ -9,20 +14,17 @@ document.getElementById('openPanel').addEventListener('click', async () => {
   }
 })
 
-document.getElementById('pairExtension').addEventListener('click', async () => {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!tab?.windowId) throw new Error('Open a browser tab before pairing')
-    await chrome.sidePanel.open({ windowId: tab.windowId })
-    window.close()
-  } catch (e) {
-    try {
-      await chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' })
-      window.close()
-    } catch {
-      alert('Unable to open the pairing panel. Try again from an open webpage.')
-    }
+document.getElementById('pairExtension').addEventListener('click', () => {
+  if (activeWindowId === null) {
+    alert('Open the popup again, then select Pair extension with StudyOS.')
+    return
   }
+
+  // Must be invoked synchronously from this click; awaiting tab lookup first
+  // causes Chrome to reject the call as no longer being a user gesture.
+  void chrome.sidePanel.open({ windowId: activeWindowId })
+    .then(() => window.close())
+    .catch(() => alert('Chrome could not open the pairing panel. Use the browser Side panel button and choose StudyOS.'))
 })
 
 const spatialBtn = document.getElementById('spatialBtn')

@@ -13,10 +13,12 @@ test('student extension uses the LearningHQ API without broad persistent page ac
   const sidepanel = extensionFile('sidepanel.js')
 
   assert.deepEqual(manifest.host_permissions, ['https://le-eee1a14046a44cd1b2f9d6fe82789fda.ecs.us-east-1.on.aws/*'])
+  assert.equal(manifest.action.default_popup, undefined)
   assert.equal(manifest.content_scripts, undefined)
   assert.equal(manifest.web_accessible_resources, undefined)
   assert.match(config, /https:\/\/le-eee1a14046a44cd1b2f9d6fe82789fda\.ecs\.us-east-1\.on\.aws\/api/)
   assert.match(background, /https:\/\/le-eee1a14046a44cd1b2f9d6fe82789fda\.ecs\.us-east-1\.on\.aws\/api/)
+  assert.match(background, /openPanelOnActionClick: true/)
   assert.match(spatialContent, /https:\/\/le-eee1a14046a44cd1b2f9d6fe82789fda\.ecs\.us-east-1\.on\.aws\/api/)
   assert.match(sidepanel, /https:\/\/le-eee1a14046a44cd1b2f9d6fe82789fda\.ecs\.us-east-1\.on\.aws\/api/)
 })
@@ -39,8 +41,9 @@ test('student setup does not depend on a source folder or remotely hosted extens
   assert.match(spatialContent, /Gemini Google Search/)
   assert.match(spatialContent, /Public-web fallback sources/)
   assert.match(popup, /id="pairExtension"/)
-  assert.match(popupScript, /type: 'OPEN_SIDE_PANEL'/)
   assert.match(popupScript, /chrome\.sidePanel\.open/)
+  assert.match(popupScript, /let activeWindowId/)
+  assert.match(popupScript, /chrome\.sidePanel\.open\(\{ windowId: activeWindowId \}\)/)
 })
 
 test('clearing a spatial selection also resets opt-in research mode', () => {

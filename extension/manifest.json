@@ -31,7 +31,6 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "StudyOS - Point & Ask",
-    "default_popup": "popup.html"
+    "default_title": "StudyOS - Point & Ask"
   }
 }

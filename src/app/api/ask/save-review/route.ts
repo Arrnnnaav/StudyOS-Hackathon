@@ -1,5 +1,6 @@
 import { markAskSavedToReview, createReview, getAskById, trackEvent } from '@/lib/db'
 import { resolveApiUser } from '@/lib/auth-utils'
+import { reviewInput } from '@/shared/review-input'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
@@ -12,28 +13,21 @@ export async function POST(request: Request) {
     }
 
     const { askId } = body
-    let { topicId, question, answer } = body
 
     if (!askId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // If topic/question/answer weren't provided (extension sends only askId),
-    // fall back to the stored ask record.
-    if (!topicId || !question || !answer) {
-      const ask = await getAskById(user.userId, askId)
-      if (ask) {
-        topicId = topicId || ask.topicId || null
-        question = question || ask.question
-        answer = answer || ask.answer
-      }
-    }
+    // Spatial questions can come from any public page, so their stored ask
+    // intentionally has no curriculum topic. The question and answer remain
+    // mandatory; the topic is optional for a review card.
+    const input = reviewInput(body, await getAskById(user.userId, askId))
 
-    if (!topicId || !question || !answer) {
+    if (!input) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    await markAskSavedToReview(askId, user.userId)
+    await markAskSavedToReview(input.askId, user.userId)
 
     // Create review item (due immediately for demo)
     const reviewId = crypto.randomUUID()
@@ -42,10 +36,10 @@ export async function POST(request: Request) {
     await createReview({
       id: reviewId,
       userId: user.userId,
-      topicId,
-      askId,
-      question,
-      answer: answer.slice(0, 500), // Truncate for review card
+      topicId: input.topicId,
+      askId: input.askId,
+      question: input.question,
+      answer: input.answer.slice(0, 500), // Truncate for review card
       nextReviewAt: now, // Due immediately
       reviewCount: 0,
       lastRating: null,
@@ -60,9 +54,9 @@ export async function POST(request: Request) {
       timestamp: now,
       userId: user.userId,
       sessionId: 'web',
-      topicId,
+      topicId: input.topicId,
       domain: null,
-      properties: { askId, reviewId }
+      properties: { askId: input.askId, reviewId }
     })
 
     return NextResponse.json({ success: true, reviewId })

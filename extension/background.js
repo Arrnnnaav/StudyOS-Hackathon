@@ -5,6 +5,11 @@
 // locally without exposing an endpoint chooser to students.
 const DEFAULT_API_BASE = 'https://le-eee1a14046a44cd1b2f9d6fe82789fda.ecs.us-east-1.on.aws/api'
 let API_BASE = DEFAULT_API_BASE
+
+// The action icon opens the native Chrome side panel directly. This avoids
+// losing Chrome's required user gesture by opening it from a popup later.
+void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(console.error)
+
 async function apiBase() {
   try {
     const { studyos_api_base } = await chrome.storage.local.get('studyos_api_base')
@@ -141,9 +146,10 @@ async function submitFeedback(askId, helpful, reason) {
 
 // Save to review
 async function saveToReview(askId) {
+  const token = await getExtensionToken()
   return apiRequest(`/ask/save-review`, {
     method: 'POST',
-    body: JSON.stringify({ askId })
+    body: JSON.stringify({ askId, extension_session_token: token })
   })
 }
 
@@ -268,7 +274,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: false, error: error.message })
       }
     },
-    async SPATIAL_SAVE_REVIEW({ askId }) {
+    async 'spatial:save-review'({ askId }) {
       try {
         const result = await saveToReview(askId)
         sendResponse({ ok: true, ...result })

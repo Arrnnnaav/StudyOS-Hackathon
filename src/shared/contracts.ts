@@ -64,14 +64,14 @@ export interface FeedbackRequest {
 export interface SaveReviewRequest {
   extension_session_token?: string
   askId: string
-  topicId?: string
+  topicId?: string | null
   question?: string
   answer?: string
 }
 
 export interface ReviewItem {
   id: string
-  topicId?: string
+  topicId?: string | null
   askId: string
   question: string
   answer: string
