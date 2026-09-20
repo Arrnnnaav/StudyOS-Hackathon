@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { ArrowRight, Play } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
+import { PUBLIC_DEMO_ACCESS, PUBLIC_STUDENT_DEMO_ACCESS } from '@/shared/demo-auth'
 
 export default function SignInPage() {
   return (
@@ -18,14 +19,15 @@ export default function SignInPage() {
 function SignInForm() {
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/auth/continue'
+  const preferredMode = searchParams.get('mode') === 'master' ? 'master' : 'student'
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const handleDemoAccess = async () => {
+  const handleDemoAccess = async (access: string) => {
     setIsLoading(true)
     setError('')
     try {
-      await signIn('credentials', { access: 'public-demo', callbackUrl })
+      await signIn('credentials', { access, callbackUrl })
     } catch (err) {
       setError('Unable to open the live demo')
       setIsLoading(false)
@@ -41,19 +43,28 @@ function SignInForm() {
           </div>
           <CardTitle className="text-2xl">Open the live demo</CardTitle>
           <CardDescription>
-            No signup required. Explore the student journey, Point &amp; Ask, spatial answers, and the master workspace.
+            No signup required. Start with the ready-to-use student dashboard, or open the master workspace separately.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <Button
-            onClick={handleDemoAccess}
+            onClick={() => void handleDemoAccess(preferredMode === 'master' ? PUBLIC_DEMO_ACCESS : PUBLIC_STUDENT_DEMO_ACCESS)}
             disabled={isLoading}
             className="w-full gap-2"
             size="lg"
           >
             <Play className="h-5 w-5" />
-            Enter live demo
+            {preferredMode === 'master' ? 'Open Master Admin' : 'Open Student Dashboard'}
             <ArrowRight className="h-4 w-4 ml-auto" />
+          </Button>
+
+          <Button
+            onClick={() => void handleDemoAccess(preferredMode === 'master' ? PUBLIC_STUDENT_DEMO_ACCESS : PUBLIC_DEMO_ACCESS)}
+            disabled={isLoading}
+            variant="outline"
+            className="w-full gap-2"
+          >
+            {preferredMode === 'master' ? 'Open Student Dashboard instead' : 'Open Master Admin instead'}
           </Button>
 
           {error && (

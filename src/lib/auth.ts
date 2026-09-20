@@ -4,7 +4,7 @@ import { DynamoDBAdapter } from '@auth/dynamodb-adapter'
 import { db } from './db'
 import { TABLES } from './db'
 import { asAuthDynamoClient } from './auth-dynamodb-client'
-import { resolvePublicDemoMaster } from '@/shared/demo-auth'
+import { resolvePublicDemoIdentity } from '@/shared/demo-auth'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // Required for a reverse proxy such as Amplify and for local `next start`.
@@ -23,7 +23,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         access: { label: 'Demo access', type: 'hidden' },
       },
       async authorize(credentials) {
-        return resolvePublicDemoMaster(credentials, process.env.MASTER_ADMIN_EMAIL || process.env.MASTER_ADMIN_EMAILS)
+        return resolvePublicDemoIdentity(credentials, process.env.MASTER_ADMIN_EMAIL || process.env.MASTER_ADMIN_EMAILS)
       }
     })
   ],

@@ -31,10 +31,15 @@ export default function LandingPage() {
           </p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/auth/signin">
+            <Link href="/auth/signin?mode=student">
               <Button size="lg" className="w-full sm:w-auto gap-2">
-                Open Live Demo
+                Open Student Demo
                 <ArrowRight className="h-5 w-5" />
+              </Button>
+            </Link>
+            <Link href="/auth/signin?mode=master">
+              <Button size="lg" variant="outline" className="w-full sm:w-auto">
+                Open Master Admin
               </Button>
             </Link>
             <Link href="#demo">
@@ -118,9 +123,9 @@ export default function LandingPage() {
             Explore the student and master experiences without creating an account.
           </p>
           <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400"><Link href="/privacy" className="underline underline-offset-4">Privacy</Link></p>
-          <Link href="/auth/signin">
+          <Link href="/auth/signin?mode=student">
             <Button size="lg" className="gap-2">
-              Enter Live Demo
+              Open Student Demo
               <ArrowRight className="h-5 w-5" />
             </Button>
           </Link>
